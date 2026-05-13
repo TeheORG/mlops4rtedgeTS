@@ -1,0 +1,64 @@
+# Environment
+.venv/
+.env
+env/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.Python
+build/
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# System
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+
+# Execution directories and results
+executions/
+executions-*/
+
+# DVC local config
+.dvc/config.local
+
+# Pipeline code repo: local DVC state and cache must not be versioned here
+.dvc/
+.dvc_storage/
+
+# Local experiment tracking
+mlruns/
+
+# Generated DVC refs from pipeline executions do not belong in the code repo
+executions/**/*.dvc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Development
+.python-version
+.mlops4ofp/
+
+# Large data files (users will provide their own)
+data/*.csv
+data/*.parquet
+data/*.pkl
+
+
+
+
+run*.csv
+
+test/experiments/**/analysis/outputs/
+test/experiments/**/logs/
+test/experiments/**/analysis/figures/

@@ -1,0 +1,107 @@
+creation_phase;parameter;creation_variant;creation_value;lineages
+f01_explore;Tu;v100;10;v700, v701, v702, v703, v704, v705, v706, v707, v708
+f03_windows;LT;v300;1;v700, v701, v702, v703, v704, v705, v706, v707, v708
+f03_windows;OW;v300;6;v700, v701, v702, v703, v704, v705, v706, v707, v708
+f03_windows;PW;v300;1;v700, v701, v702, v703, v704, v705, v706, v707, v708
+f03_windows;event_type_count;v300;221;v700, v701, v702, v703, v704, v705, v706, v707, v708
+f04_targets;prediction_name;v400;Battery_Active_Power_any-to-80_100;v700
+f04_targets;prediction_name;v401;Battery_Active_Power_Set_Response_any-to-80_100;v701
+f04_targets;prediction_name;v402;PVPCS_Active_Power_any-to-80_100;v702
+f04_targets;prediction_name;v403;GE_Active_Power_any-to-80_100;v703
+f04_targets;prediction_name;v404;GE_Body_Active_Power_any-to-80_100;v704
+f04_targets;prediction_name;v405;GE_Body_Active_Power_Set_Response_any-to-80_100;v705
+f04_targets;prediction_name;v406;FC_Active_Power_FC_END_Set_any-to-80_100;v706
+f04_targets;prediction_name;v407;FC_Active_Power_any-to-80_100;v707
+f04_targets;prediction_name;v408;MG-LV-MSB_AC_Voltage_any-to-80_100;v708
+f05_modeling;best_precision;v500;1.0000;v700
+f05_modeling;best_precision;v501;0.2727;v701
+f05_modeling;best_precision;v502;0.7847;v702
+f05_modeling;best_precision;v503;0.8956;v703
+f05_modeling;best_precision;v504;0.7692;v704
+f05_modeling;best_precision;v506;0.0000;v706
+f05_modeling;best_precision;v507;0.6154;v707
+f05_modeling;best_recall;v500;0.2727;v700
+f05_modeling;best_recall;v501;0.0714;v701
+f05_modeling;best_recall;v502;0.5793;v702
+f05_modeling;best_recall;v503;0.9216;v703
+f05_modeling;best_recall;v504;0.6071;v704
+f05_modeling;best_recall;v506;0.0000;v706
+f05_modeling;best_recall;v507;0.1667;v707
+f05_modeling;decision_threshold;v500;0.1142;v700
+f05_modeling;decision_threshold;v501;0.5541;v701
+f05_modeling;decision_threshold;v502;0.4022;v702
+f05_modeling;decision_threshold;v503;0.6958;v703
+f05_modeling;decision_threshold;v504;0.6170;v704
+f05_modeling;decision_threshold;v506;0.0008;v706
+f05_modeling;decision_threshold;v507;0.6342;v707
+f05_modeling;model_family;v500;cnn1d;v700
+f05_modeling;model_family;v501;cnn1d;v701
+f05_modeling;model_family;v502;cnn1d;v702
+f05_modeling;model_family;v503;cnn1d;v703
+f05_modeling;model_family;v504;cnn1d;v704
+f05_modeling;model_family;v505;cnn1d;v705
+f05_modeling;model_family;v506;cnn1d;v706
+f05_modeling;model_family;v507;cnn1d;v707
+f05_modeling;model_family;v508;cnn1d;v708
+f05_modeling;trainable;v500;true;v700
+f05_modeling;trainable;v501;true;v701
+f05_modeling;trainable;v502;true;v702
+f05_modeling;trainable;v503;true;v703
+f05_modeling;trainable;v504;true;v704
+f05_modeling;trainable;v505;false;v705
+f05_modeling;trainable;v506;true;v706
+f05_modeling;trainable;v507;true;v707
+f05_modeling;trainable;v508;false;v708
+f06_quant;arena_estimada_bytes;v600;120840;v700
+f06_quant;arena_estimada_bytes;v601;90816;v701
+f06_quant;arena_estimada_bytes;v602;75900;v702
+f06_quant;arena_estimada_bytes;v603;90816;v703
+f06_quant;arena_estimada_bytes;v604;90816;v704
+f06_quant;arena_estimada_bytes;v606;90816;v706
+f06_quant;arena_estimada_bytes;v607;90816;v707
+f06_quant;edge_capable;v600;true;v700
+f06_quant;edge_capable;v601;true;v701
+f06_quant;edge_capable;v602;true;v702
+f06_quant;edge_capable;v603;true;v703
+f06_quant;edge_capable;v604;true;v704
+f06_quant;edge_capable;v605;false;v705
+f06_quant;edge_capable;v606;true;v706
+f06_quant;edge_capable;v607;true;v707
+f06_quant;edge_capable;v608;false;v708
+f06_quant;footprint_estimated_bytes;v600;201400;v700
+f06_quant;footprint_estimated_bytes;v601;151360;v701
+f06_quant;footprint_estimated_bytes;v602;126500;v702
+f06_quant;footprint_estimated_bytes;v603;151360;v703
+f06_quant;footprint_estimated_bytes;v604;151360;v704
+f06_quant;footprint_estimated_bytes;v606;151360;v706
+f06_quant;footprint_estimated_bytes;v607;151360;v707
+f06_quant;model_size_bytes;v600;80560;v700
+f06_quant;model_size_bytes;v601;60544;v701
+f06_quant;model_size_bytes;v602;50600;v702
+f06_quant;model_size_bytes;v603;60544;v703
+f06_quant;model_size_bytes;v604;60544;v704
+f06_quant;model_size_bytes;v606;60544;v706
+f06_quant;model_size_bytes;v607;60544;v707
+f06_quant;operators;v600;"[""CAST"", ""CONV_2D"", ""DEQUANTIZE"", ""EXPAND_DIMS"", ""FULLY_CONNECTED"", ""GATHER"", ""LOGISTIC"", ""REDUCE_MAX"", ""RESHAPE""]";v700
+f06_quant;operators;v601;"[""CAST"", ""CONV_2D"", ""DEQUANTIZE"", ""EXPAND_DIMS"", ""FULLY_CONNECTED"", ""GATHER"", ""LOGISTIC"", ""REDUCE_MAX"", ""RESHAPE""]";v701
+f06_quant;operators;v602;"[""CAST"", ""CONV_2D"", ""DEQUANTIZE"", ""EXPAND_DIMS"", ""FULLY_CONNECTED"", ""GATHER"", ""LOGISTIC"", ""REDUCE_MAX"", ""RESHAPE""]";v702
+f06_quant;operators;v603;"[""CAST"", ""CONV_2D"", ""DEQUANTIZE"", ""EXPAND_DIMS"", ""FULLY_CONNECTED"", ""GATHER"", ""LOGISTIC"", ""REDUCE_MAX"", ""RESHAPE""]";v703
+f06_quant;operators;v604;"[""CAST"", ""CONV_2D"", ""DEQUANTIZE"", ""EXPAND_DIMS"", ""FULLY_CONNECTED"", ""GATHER"", ""LOGISTIC"", ""REDUCE_MAX"", ""RESHAPE""]";v704
+f06_quant;operators;v606;"[""CAST"", ""CONV_2D"", ""DEQUANTIZE"", ""EXPAND_DIMS"", ""FULLY_CONNECTED"", ""GATHER"", ""LOGISTIC"", ""REDUCE_MAX"", ""RESHAPE""]";v706
+f06_quant;operators;v607;"[""CAST"", ""CONV_2D"", ""DEQUANTIZE"", ""EXPAND_DIMS"", ""FULLY_CONNECTED"", ""GATHER"", ""LOGISTIC"", ""REDUCE_MAX"", ""RESHAPE""]";v707
+f07_modval;itmax_ms;v700;100;v700
+f07_modval;itmax_ms;v701;100;v701
+f07_modval;itmax_ms;v702;100;v702
+f07_modval;itmax_ms;v703;100;v703
+f07_modval;itmax_ms;v704;100;v704
+f07_modval;itmax_ms;v705;100;v705
+f07_modval;itmax_ms;v706;100;v706
+f07_modval;itmax_ms;v707;100;v707
+f07_modval;itmax_ms;v708;100;v708
+f07_modval;quality_score;v700;null;v700
+f07_modval;quality_score;v701;null;v701
+f07_modval;quality_score;v702;null;v702
+f07_modval;quality_score;v703;null;v703
+f07_modval;quality_score;v704;null;v704
+f07_modval;quality_score;v706;null;v706
+f07_modval;quality_score;v707;null;v707

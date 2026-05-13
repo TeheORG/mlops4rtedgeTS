@@ -1,0 +1,71 @@
+========================================
+ EXPERIMENT: AUDITABILITY DEMONSTRATION 
+========================================
+[STEP 0] Cleaning all variants
+[STEP 1] Creating valid chain v105 -> v205 -> v305
+[OK]   make variant1 VARIANT=v105 RAW=data/raw.csv CLEANING=basic NAN_VALUES=[-999999] MAX_LINES=2000
+[OK]   make script1 VARIANT=v105
+[OK]   make register1 VARIANT=v105
+[OK]   make variant2 VARIANT=v205 PARENT=v105 BANDS=[40, 60, 80] STRATEGY=transitions NAN_MODE=keep
+[OK]   make script2 VARIANT=v205
+[OK]   make register2 VARIANT=v205
+[OK]   make variant3 VARIANT=v305 PARENT=v205 OW=6 LT=1 PW=1 STRATEGY=synchro NAN_MODE=discard
+[OK]   make script3 VARIANT=v305
+[OK]   make register3 VARIANT=v305
+[STEP 2] Creating v505 WITHOUT v405 (must fail)
+[OK]   make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none (correctly failed)
+[STEP 2b] Creating missing parent v405
+[OK]   make variant4 VARIANT=v405 NAME=Battery_Active_Power_any-to-80_100 PARENT=v305 OPERATOR=OR EVENTS=["FC_Active_Power_0_40-to-80_100","FC_Active_Power_40_60-to-80_100","FC_Active_Power_60_80-to-80_100"]
+[OK]   make script4 VARIANT=v405
+[OK]   make register4 VARIANT=v405
+[STEP 2c] Now v505 should work
+[OK]   make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+[OK]   make script5 VARIANT=v505
+[OK]   make register5 VARIANT=v505
+[STEP 3] Modify parent outputs.yaml -> must break child register
+[OK]   make variant6 VARIANT=v605 PARENT=v505
+[FAIL] make script6 VARIANT=v606
+[INFO] Using local Python interpreter: python3.11
+[INFO] Using Python interpreter in venv: .venv/bin/python3
+==> Running F06 in Docker (mlops4ofp-f56:py311-tf215) for v606
+Traceback (most recent call last):
+  File "<frozen runpy>", line 189, in _run_module_as_main
+  File "<frozen runpy>", line 159, in _get_module_details
+  File "<frozen importlib._bootstrap_external>", line 1074, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1004, in source_to_code
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "/workspace/scripts/phases/f06_quant.py", line 620
+    # test change
+                 ^
+IndentationError: expected an indented block after 'if' statement on line 618
+make: *** [script6] Error 1
+[INFO] Tampering outputs.yaml of parent v505
+[OK]   make register6 VARIANT=v605 (correctly failed)
+[INFO] Reverting outputs.yaml
+[STEP 3b] Register should now work
+[OK]   make register6 VARIANT=v605
+[STEP 4] Modify phase code -> must break register
+[OK]   make variant6 VARIANT=v606 PARENT=v505
+[FAIL] make script6 VARIANT=v606
+[INFO] Using local Python interpreter: python3.11
+[INFO] Using Python interpreter in venv: .venv/bin/python3
+==> Running F06 in Docker (mlops4ofp-f56:py311-tf215) for v606
+Traceback (most recent call last):
+  File "<frozen runpy>", line 189, in _run_module_as_main
+  File "<frozen runpy>", line 159, in _get_module_details
+  File "<frozen importlib._bootstrap_external>", line 1074, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1004, in source_to_code
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "/workspace/scripts/phases/f06_quant.py", line 620
+    # test change
+                 ^
+IndentationError: expected an indented block after 'if' statement on line 618
+make: *** [script6] Error 1
+[INFO] Tampering source code (f06)
+[OK]   make register6 VARIANT=v606 (correctly failed)
+[INFO] Reverting source code
+[STEP 4b] Register should now work
+[OK]   make register6 VARIANT=v606
+========================================
+ RESULT: AUDITABILITY TEST COMPLETED 
+========================================

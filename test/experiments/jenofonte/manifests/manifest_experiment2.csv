@@ -1,0 +1,6 @@
+job_id,phase,variant,parent,parent_f02,make_target,script_target,strategy,pipeline,measure,direction,ow,pw,lt,dedup,seed
+f02_v220,f02,v220,v000,v210,variant2,script2,transitions,,,,,,,,
+f02_v221,f02,v221,v000,v211,variant2,script2,transitions,,,,,,,,
+f02_v222,f02,v222,v000,v212,variant2,script2,transitions,,,,,,,,
+f02_v223,f02,v223,v000,v213,variant2,script2,transitions,,,,,,,,
+f02_v224,f02,v224,v000,v214,variant2,script2,transitions,,,,,,,,

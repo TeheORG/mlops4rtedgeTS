@@ -1,0 +1,4 @@
+job_id,phase,variant,parent,parent_f02,make_target,script_target,strategy,pipeline,measure,direction,ow,pw,lt,dedup,seed
+f03_test,f03,v999,v210,v210,variant3,script3,synchro,,,,180,60,6,,
+f03_test_ge_high,f04,v999,v999,v210,variant4,script4,synchro,,GE_Active_Power,high,180,60,6,,
+f03_test_ge_high_base,f05,v999,v999,v210,variant5,script5,synchro,base,GE_Active_Power,high,180,60,6,none,42

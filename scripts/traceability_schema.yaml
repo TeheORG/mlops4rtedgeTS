@@ -1,0 +1,1870 @@
+version: "3.2"
+
+description: >
+  Declarative configuration schema for pipeline phases.
+  Used by params.py to validate and resolve phase parameters.
+
+# ============================================================
+# GLOBAL DEFINITIONS
+# ============================================================
+
+global:
+
+  VARIANT:
+    type: string
+    required: true
+    regex: "^v[0-9]_[0-9]{4}$"
+
+  PARENT:
+    type: string
+    required: true
+    regex: "^v[0-9]_[0-9]{4}$"
+
+  supported_types:
+    - string
+    - integer
+    - float
+    - number
+    - boolean
+    - list
+    - dict
+    - dataset
+    - model
+    - file
+    - json
+
+
+# ============================================================
+# PHASE DEFINITIONS
+# ============================================================
+
+phases:
+
+# ------------------------------------------------------------
+# F01 — EXPLORE / CLEAN DATASET
+# ------------------------------------------------------------
+
+  f01_explore:
+
+    parent_required: false
+
+    parameters:
+
+      raw_path:
+        type: string
+        required: true
+        inherited: false
+        check: path_exists
+
+      cleaning:
+        type: string
+        required: true
+        inherited: false
+        allowed:
+          - none
+          - basic
+          - strict
+
+      nan_values:
+        type: list
+        required: false
+        items:
+          type: number
+          nullable: true
+
+      error_values:
+        type: dict
+        required: false
+        values:
+          type: list
+          items:
+            type: number
+
+      first_line:
+        type: integer
+        required: false
+        inherited: false
+        check: ">=0"
+
+      max_lines:
+        type: integer
+        required: false
+        inherited: false
+        check: ">=0"
+
+    outputs:
+
+      artifacts:
+        dataset:
+          type: file
+          required: true
+          extension: parquet
+
+        report:
+          type: file
+          required: true
+          extension: html
+
+      exports:
+        Tu:
+          type: integer
+          required: true
+
+        n_rows:
+          type: integer
+          required: true
+
+        n_columns:
+          type: integer
+          required: true
+        
+        measure_cols:
+          type: list
+          required: true
+          items:
+            type: string
+
+      metrics:
+        execution_time:
+          type: float
+          required: true
+
+        n_nan_detected:
+          type: integer
+          required: true
+
+        n_nan_replaced:
+          type: integer
+          required: true
+
+        nan_ratio:
+          type: float
+          required: true
+
+# ------------------------------------------------------------
+# F02 — BUILD EVENTS DATASET
+# ------------------------------------------------------------
+
+  f02_events:
+
+    parent_required: true
+
+    parameters:
+      parent_variant:
+        mode: single
+        type: string
+        required: true
+        inherited: false
+        regex: "^v1_[0-9]{4}$"
+
+      Tu:
+        type: integer
+        required: true
+        inherited: true
+
+      strategy:
+        type: string
+        required: true
+        inherited: false
+        allowed:
+          - levels
+          - transitions
+          - both
+
+      bands:
+        type: list
+        required: true
+        inherited: false
+        items:
+          type: number
+
+      nan_mode:
+        type: string
+        required: true
+        inherited: false
+        allowed:
+          - keep
+          - discard
+
+    outputs:
+
+      artifacts:
+
+        events:
+          type: file
+          required: true
+          extension: parquet
+
+        catalog:
+          type: file
+          required: true
+          extension: json
+
+        report:
+          type: file
+          required: true
+          extension: html
+
+      exports:
+
+        Tu:
+          type: integer
+          required: true
+
+        n_events:
+          type: integer
+          required: true
+
+        n_types:
+          type: integer
+          required: true
+
+      metrics:
+
+        execution_time:
+          type: float
+          required: true
+
+        n_rows_in:
+          type: integer
+          required: true
+
+        n_rows_out:
+          type: integer
+          required: true
+
+        nan_ratio_in:
+          type: float
+          required: false
+
+        nan_ratio_out:
+          type: float
+          required: false
+
+  f03_windows:
+
+    parent_required: true
+
+    parameters:
+
+      parent_variant:
+        mode: single
+        type: string
+        required: true
+        inherited: false
+        regex: "^v2_[0-9]{4}$"
+
+      Tu:
+        type: integer
+        required: false
+        inherited: true   # si el usuario no lo redefine, hereda el de fases anteriores
+
+      OW:
+        type: integer
+        required: true
+        inherited: false
+        check: ">=1"      # tamaño ventana de observación (en múltiplos de Tu)
+
+      LT:
+        type: integer
+        required: true
+        inherited: false
+        check: ">=0"      # lead time antes de la ventana de predicción
+
+      PW:
+        type: integer
+        required: true
+        inherited: false
+        check: ">=1"      # tamaño ventana de predicción (en múltiplos de Tu)
+
+      window_strategy:
+        type: string
+        required: true
+        inherited: false
+        allowed:
+          - synchro     # ventanas deslizantes con paso fijo Tu
+          - asynOW      # OW deslizante, PW anclada a eventos
+          - withinPW    # OW dentro de PW
+          - asynPW      # PW deslizante, OW anclada a eventos
+
+      nan_mode:
+        type: string
+        required: true
+        inherited: false
+        allowed:
+          - keep    # mantiene ventanas con NaN (marcándolos)
+          - discard     # descarta ventanas con NaN en columnas de medida
+
+    outputs:
+
+      artifacts:
+
+        dataset:
+          type: file
+          required: true
+          extension: parquet
+
+        catalog:
+          type: file
+          required: true
+          extension: json
+
+        report:
+          type: file
+          required: true
+          extension: html
+
+      exports:
+
+        Tu:
+          type: integer
+          required: true
+
+        OW:
+          type: integer
+          required: true
+
+        LT:
+          type: integer
+          required: true
+
+        PW:
+          type: integer
+          required: true
+
+        event_type_count:
+          type: integer
+          required: true
+
+        window_strategy:
+          type: string
+          required: true
+
+        nan_mode:
+          type: string
+          required: true
+
+        n_windows:
+          type: integer
+          required: true
+
+      metrics:
+
+        execution_time:
+          type: float
+          required: true
+
+        n_events_in:
+          type: integer
+          required: true
+
+  # ------------------------------------------------------------
+  # F04 — TARGET ENGINEERING (WINDOW LABELING)
+  # ------------------------------------------------------------
+
+  f04_targets:
+
+    parent_required: true
+
+    parameters:
+
+      parent_variant:
+        mode: single
+        type: string
+        required: true
+        inherited: false
+        regex: "^v3_[0-9]{4}$"
+
+      # Solo para trazabilidad estructural (heredados si no se redefinen)
+      Tu:
+        type: integer
+        required: false
+        inherited: true
+
+      OW:
+        type: integer
+        required: false
+        inherited: true
+
+      LT:
+        type: integer
+        required: false
+        inherited: true
+
+      PW:
+        type: integer
+        required: false
+        inherited: true
+
+      event_type_count:
+        type: integer
+        required: false
+        inherited: true
+
+      # Nombre legible que viajará aguas abajo (F05, F06...)
+      prediction_name:
+        type: string
+        required: true
+        inherited: false
+        regex: "^[a-z0-9_]+$"
+
+      # Operador lógico aplicado sobre eventos de PW
+      target_operator:
+        type: string
+        required: true
+        inherited: false
+        allowed:
+          - OR
+
+      # Lista de nombres de tipos de evento (según catálogo F02)
+      target_event_types:
+        type: list
+        required: true
+        inherited: false
+        items:
+          type: string
+
+    outputs:
+
+      artifacts:
+
+        dataset:
+          type: file
+          required: true
+          extension: parquet
+
+        report:
+          type: file
+          required: true
+          extension: html
+
+      exports:
+
+        # Geometría heredada (snapshot audit)
+        Tu:
+          type: integer
+          required: false
+
+        OW:
+          type: integer
+          required: false
+
+        LT:
+          type: integer
+          required: false
+
+        PW:
+          type: integer
+          required: false
+
+        event_type_count:
+          type: integer
+          required: true
+
+        # Definición congelada del objetivo
+        prediction_name:
+          type: string
+          required: true
+
+        target_operator:
+          type: string
+          required: true
+
+        target_event_types:
+          type: list
+          required: true
+          items:
+            type: string
+
+        # Estadísticas resultantes
+        n_windows:
+          type: integer
+          required: true
+
+        n_windows_pos:
+          type: integer
+          required: true
+
+        n_windows_neg:
+          type: integer
+          required: true
+
+      metrics:
+
+        execution_time:
+          type: float
+          required: true
+
+        positive_ratio:
+          type: float
+          required: true
+
+  # ------------------------------------------------------------
+  # F05 — MODELING
+  # ------------------------------------------------------------
+
+  f05_modeling:
+
+    parent_required: true
+
+    parameters:
+
+      parent_variant:
+        mode: single
+        type: string
+        required: true
+        inherited: false
+        regex: "^v4_[0-9]{4}$"
+
+      # -------------------------------------------------
+      # Geometría heredada
+      # -------------------------------------------------
+      Tu:
+        type: integer
+        required: false
+        inherited: true
+
+      OW:
+        type: integer
+        required: false
+        inherited: true
+
+      LT:
+        type: integer
+        required: false
+        inherited: true
+
+      PW:
+        type: integer
+        required: false
+        inherited: true
+
+      prediction_name:
+        type: string
+        required: false
+        inherited: true
+
+      event_type_count:
+        type: integer
+        required: false
+        inherited: true
+
+      # -------------------------------------------------
+      # Modelo
+      # -------------------------------------------------
+
+      model_family:
+        type: string
+        required: true
+        allowed:
+          - dense_bow
+          - sequence_embedding
+          - cnn1d
+
+      # -------------------------------------------------
+      # AutoML
+      # -------------------------------------------------
+
+      automl:
+        type: dict
+        required: true
+        default:
+          enabled: true
+          max_trials: 5
+          seed: 42
+
+      search_space:
+        type: dict
+        required: true
+        default:
+          common:
+            batch_size: [128, 256]
+            learning_rate: [0.001, 0.0005]
+            n_layers: [1, 2]
+            units: [64, 128]
+            dropout: [0.0, 0.2]
+          dense_bow: {}
+          sequence_embedding:
+            embed_dim: [64, 128]
+          cnn1d:
+            embed_dim: [64]
+            filters: [64, 128]
+            kernel_size: [3, 5]
+
+      # -------------------------------------------------
+      # Training config
+      # -------------------------------------------------
+
+      training:
+        type: dict
+        required: true
+        default:
+          epochs: 10
+          max_samples: null
+
+      # -------------------------------------------------
+      # Deduplicacion mode
+      # -------------------------------------------------
+      deduplication_mode:
+        type: string
+        required: false
+        inherited: false
+        allowed:
+          - none
+          - auto  
+          - neg_only
+          - all
+
+      #--------------------------------------------------
+      # Seed
+      #--------------------------------------------------
+      seed:
+        type: integer
+        required: false
+        inherited: false
+
+      # -------------------------------------------------
+      # Evaluation split
+      # -------------------------------------------------
+
+      evaluation:
+        type: dict
+        required: true
+        default:
+          split:
+            train: 0.7
+            val: 0.15
+            test: 0.15
+
+      # -------------------------------------------------
+      # Imbalance
+      # -------------------------------------------------
+
+      imbalance_strategy:
+        type: string
+        required: true
+        inherited: false
+        allowed:
+          - none
+          - rare_events
+          - auto
+        default: none
+
+      imbalance_max_majority_samples:
+        type: integer
+        required: false
+        inherited: false
+        nullable: true
+        check: ">=1"
+        default: null
+
+    outputs:
+
+      artifacts:
+
+        model:
+          type: file
+          required: false
+          extension: h5
+
+        labeled_dataset:
+          type: file
+          required: true
+          extension: parquet
+
+        report:
+          type: file
+          required: true
+          extension: html
+
+        history:
+          type: file
+          required: false
+          extension: json
+
+      exports:
+
+        Tu:
+          type: integer
+          required: true
+
+        OW:
+          type: integer
+          required: true
+
+        LT:
+          type: integer
+          required: true
+
+        PW:
+          type: integer
+          required: true
+
+        event_type_count:
+          type: integer
+          required: true
+
+        models:
+          type: list
+          required: false
+          items:
+            type: dict
+
+        prediction_name:
+          type: string
+          required: true
+
+        model_family:
+          type: string
+          required: true
+
+        trainable:
+          type: boolean
+          required: false
+
+        incompatibility_reason:
+          type: string
+          required: false
+
+        decision_threshold:
+          type: float
+          required: false
+
+        best_val_recall:
+          type: float
+          required: false
+
+        test_precision:
+          type: float
+          required: false
+
+        test_recall:
+          type: float
+          required: false
+
+        test_f1:
+          type: float
+          required: false
+
+      metrics:
+
+        execution_time:
+          type: float
+          required: true
+
+        n_train:
+          type: integer
+          required: true
+
+        n_val:
+          type: integer
+          required: true
+
+        n_test:
+          type: integer
+          required: true
+
+        positive_ratio_train:
+          type: float
+          required: true
+
+        tp:
+          type: integer
+          required: true
+
+        tn:
+          type: integer
+          required: true
+
+        fp:
+          type: integer
+          required: true
+
+        fn:
+          type: integer
+          required: true
+
+  f06_quant:
+
+    parent_required: true
+
+    parameters:
+
+      parent_variant:
+        mode: single
+        type: string
+        required: true
+        inherited: false
+        regex: "^v5_[0-9]{4}$"
+
+      # -------------------------------------------------
+      # Geometría heredada
+      # -------------------------------------------------
+      Tu:
+        type: integer
+        required: false
+        inherited: true
+
+      OW:
+        type: integer
+        required: false
+        inherited: true
+
+      LT:
+        type: integer
+        required: false
+        inherited: true
+
+      PW:
+        type: integer
+        required: false
+        inherited: true
+
+      # -------------------------------------------------
+      # Identidad del objetivo (heredada)
+      # -------------------------------------------------
+
+      prediction_name:
+        type: string
+        required: false
+        inherited: true
+
+      event_type_count:
+        type: integer
+        required: false
+        inherited: true
+
+      # -------------------------------------------------
+      # Plataforma de despliegue (primera aparición)
+      # -------------------------------------------------
+
+      deployment:
+        type: dict
+        required: true
+        default:
+          target: "esp32"
+          runtime: "esp-tflite-micro"
+          runtime_version: "1.3.3"
+          require_int8: true
+          memory_limit_bytes: 327680  # configurable según placa
+
+      # -------------------------------------------------
+      # Configuración de cuantización
+      # -------------------------------------------------
+
+      quantization:
+        type: dict
+        required: true
+        default:
+          tflite_optimization: "DEFAULT"
+          representative_dataset: "val"
+          calibration_samples: 512
+          symmetric_int8: true
+          per_channel: true
+          keep_float_fallback: false
+
+      # -------------------------------------------------
+      # Ajuste de umbral
+      # -------------------------------------------------
+
+      thresholding:
+        type: dict
+        required: true
+        default:
+          strategy: "recalibrate_on_quantized"
+          maximize_metric: "recall"
+          grid_points: 101
+
+      # -------------------------------------------------
+      # Configuración de la unidad de despliegue
+      # -------------------------------------------------
+
+      eedu:
+        type: dict
+        required: true
+        default:
+          version: "1.0"
+          layout: "default"
+
+    outputs:
+
+      artifacts:
+
+        calibration_dataset:
+          type: file
+          required: true
+          extension: parquet
+
+        model_float:
+          type: file
+          required: false
+          extension: h5
+
+        # Solo se genera si edge_capable = true
+        model_tflite:
+          type: file
+          required: false
+          extension: tflite
+
+        report:
+          type: file
+          required: true
+          extension: html
+
+        # Solo si edge_capable = true
+        eedu_manifest:
+          type: file
+          required: false
+          extension: yaml
+
+      exports:
+
+        Tu:
+          type: integer
+          required: true
+
+        OW:
+          type: integer
+          required: true
+
+        LT:
+          type: integer
+          required: true
+
+        PW:
+          type: integer
+          required: true
+
+        event_type_count:
+          type: integer
+          required: true
+
+        prediction_name:
+          type: string
+          required: true
+
+        runtime_model_name:
+          type: string
+          required: true
+
+        model_family:
+          type: string
+          required: true
+
+        decision_threshold:
+          type: float
+          required: false
+
+        edge_capable:
+          type: boolean
+          required: true
+
+        incompatibility_reason:
+          type: string
+          required: false
+
+        model_size_bytes:
+          type: integer
+          required: false
+
+        arena_estimated_bytes:
+          type: integer
+          required: false
+
+        footprint_estimated_bytes:
+          type: integer
+          required: false
+
+        operators:
+          type: list
+          required: false
+
+      metrics:
+
+        execution_time:
+          type: float
+          required: true
+
+        tflm_compatible:
+          type: boolean
+          required: true
+
+        operators_detected:
+          type: integer
+          required: true
+
+        unsupported_operators:
+          type: integer
+          required: true
+
+        n_calibration_samples:
+          type: integer
+          required: false
+
+        val_recall_float:
+          type: float
+          required: false
+
+        val_recall_quant:
+          type: float
+          required: false
+
+        val_precision_float:
+          type: float
+          required: false
+
+        val_precision_quant:
+          type: float
+          required: false
+
+        val_f1_float:
+          type: float
+          required: false
+
+        val_f1_quant:
+          type: float
+          required: false
+
+  # ------------------------------------------------------------
+  # F07 — MODEL VALIDATION ON EDGE
+  # ------------------------------------------------------------
+
+  f07_modval:
+
+    parent_required: true
+
+    parameters:
+
+      parent_variant:
+        mode: single
+        type: string
+        required: true
+        inherited: false
+        regex: "^v6_[0-9]{4}$"
+
+      # -------------------------------------------------
+      # Geometría heredada desde F06
+      # -------------------------------------------------
+
+      time_scale_factor:
+        type: float
+        required: false
+        default: 1.0
+        check: ">0"
+
+      Tu:
+        type: integer
+        required: false
+        inherited: true
+
+      OW:
+        type: integer
+        required: false
+        inherited: true
+
+      LT:
+        type: integer
+        required: false
+        inherited: true
+
+      PW:
+        type: integer
+        required: false
+        inherited: true
+
+      prediction_name:
+        type: string
+        required: false
+        inherited: true
+
+      decision_threshold:
+        type: float
+        required: false
+        inherited: true
+
+      event_type_count:
+        type: integer
+        required: false
+        inherited: true
+
+      MTI_MS:
+        type: integer
+        required: true
+        inherited: false
+        check: ">0"
+
+      ITmax:
+        type: integer
+        required: false
+        inherited: false
+
+      max_rows:
+        type: integer
+        required: false
+        inherited: false
+        check: ">=1"
+        
+      # -------------------------------------------------
+      # Plataforma edge obligatoria (carpeta bajo edge/)
+      # -------------------------------------------------
+
+      platform:
+        type: string
+        required: true
+        inherited: false
+
+    outputs:
+
+      artifacts:
+
+        # Snapshot de configuración efectiva de ejecución
+        edge_run_config:
+          type: file
+          required: true
+          extension: yaml
+
+        # Perfil canónico resumido del modelo validado en F07
+        model_profile:
+          type: file
+          required: true
+          extension: yaml
+
+        # Dataset convertido al formato usado por la ESP32
+        input_dataset_csv:
+          type: file
+          required: true
+          extension: csv
+
+        # Dataset etiquetado original para evaluación supervisada posterior
+        evaluation_dataset_csv:
+          type: file
+          required: true
+          extension: csv
+
+        # Resúmenes tabulares útiles para auditoría y consumo posterior
+        metrics_models:
+          type: file
+          required: true
+          extension: csv
+
+        metrics_memory:
+          type: file
+          required: true
+          extension: csv
+
+        metrics_system_timing:
+          type: file
+          required: true
+          extension: csv
+
+        # Configuración efectiva del SDK generada por ESP-IDF
+        sdkconfig:
+          type: file
+          required: true
+
+        # Logs de build / flash / monitor
+        edge_build_log:
+          type: file
+          required: true
+          extension: txt
+
+        edge_flash_log:
+          type: file
+          required: true
+          extension: txt
+
+        edge_monitor_log:
+          type: file
+          required: true
+          extension: txt
+
+        # Resultados crudos generados por la plataforma
+        edge_predictions:
+          type: file
+          required: true
+          extension: csv
+
+        edge_runtime_metrics_raw:
+          type: file
+          required: true
+          extension: json
+
+        # Informe consolidado de la fase
+        report:
+          type: file
+          required: true
+          extension: html
+
+      exports:
+
+        # -------------------------------------------------
+        # Geometría / firma de entrada necesaria aguas abajo
+        # -------------------------------------------------
+
+        Tu:
+          type: integer
+          required: true
+
+        OW:
+          type: integer
+          required: true
+
+        LT:
+          type: integer
+          required: true
+
+        PW:
+          type: integer
+          required: true
+
+        event_type_count:
+          type: integer
+          required: true
+
+        prediction_name:
+          type: string
+          required: true
+
+        # -------------------------------------------------
+        # Identidad del modelo / plataforma
+        # -------------------------------------------------
+
+        model_id:
+          type: string
+          required: true
+
+        platform:
+          type: string
+          required: true
+
+        runtime_model_name:
+          type: string
+          required: true
+
+        # -------------------------------------------------
+        # Parámetros de ejecución / composición
+        # -------------------------------------------------
+
+        itmax_ms:
+          type: float
+          required: true
+
+        ITmax:
+          type: integer
+          required: true
+
+        MTI_MS:
+          type: integer
+          required: true
+
+        operators:
+          type: list
+          required: true
+
+        decision_threshold:
+          type: float
+          required: true
+
+        arena_bytes:
+          type: integer
+          required: false
+
+        model_memory_bytes:
+          type: integer
+          required: false
+
+        # -------------------------------------------------
+        # Propagado desde F06 para gobernar composición en F08
+        # -------------------------------------------------
+
+        edge_capable:
+          type: boolean
+          required: true
+
+        incompatibility_reason:
+          type: string
+          required: false
+
+        # -------------------------------------------------
+        # Resumen canónico de calidad / outcomes
+        # -------------------------------------------------
+
+        quality_score:
+          type: float
+          required: false
+
+        n_inferences:
+          type: integer
+          required: true
+
+        ok_rate:
+          type: float
+          required: false
+
+        offload_rate:
+          type: float
+          required: false
+
+        watchdog_rate:
+          type: float
+          required: false
+
+        edge_run_completed:
+          type: boolean
+          required: true
+
+        phase_status_reason:
+          type: string
+          required: false
+
+      metrics:
+
+        execution_time:
+          type: float
+          required: true
+
+        # Número total de inferencias realizadas en la ESP32
+        n_inferences:
+          type: integer
+          required: true
+
+        # Métricas temporales
+        edge_mean_latency_ms:
+          type: float
+          required: true
+
+        edge_max_latency_ms:
+          type: float
+          required: true
+
+        edge_jitter_ms:
+          type: float
+          required: true
+
+        # Memoria reportada por el runtime
+        edge_memory_peak_bytes:
+          type: integer
+          required: false
+
+        # Consistencia PC vs ESP32 (comparación de predicciones)
+        pc_esp_agreement:
+          type: float
+          required: false
+
+        # Tasas de outcome observadas
+        ok_rate:
+          type: float
+          required: false
+
+        offload_rate:
+          type: float
+          required: false
+
+        watchdog_rate:
+          type: float
+          required: false
+
+        # Calidad canónica a nivel de modelo en placa
+        quality_score:
+          type: float
+          required: false
+
+  f08_sysval:
+
+    parent_required: true
+
+    parameters:
+
+      parent_variant:
+        mode: multi
+        type: list
+        required: true
+        regex: "^v7_[0-9]{4}$"
+
+      # -------------------------------------------------
+      # Multi-parent explícito (modo manual)
+      # -------------------------------------------------
+
+      selection_mode:
+        type: string
+        required: true
+        allowed: [manual, auto_ilp]
+
+      objective:
+        type: string
+        required: false
+        inherited: false
+        allowed: [max_global_recall, global_recall, recall_global, max_tp]
+
+      solver_time_limit_sec:
+        type: integer
+        required: false
+        inherited: false
+        default: 30
+        check: ">0"
+
+      # -------------------------------------------------
+      # Contexto común de sistema
+      # Se resuelve/valida a partir del conjunto de parents
+      # -------------------------------------------------
+
+      time_scale_factor:
+        type: float
+        required: false
+        default: 1.0
+        check: ">0"
+
+      Tu:
+        type: integer
+        required: false
+        inherited: false
+
+      OW:
+        type: integer
+        required: false
+        inherited: false
+
+      LT:
+        type: integer
+        required: false
+        inherited: false
+
+      PW:
+        type: integer
+        required: false
+        inherited: false
+
+      event_type_count:
+        type: integer
+        required: false
+        inherited: false
+
+      # -------------------------------------------------
+      # Restricciones / parámetros de sistema
+      # -------------------------------------------------
+
+      MTI_MS:
+        type: integer
+        required: true
+        inherited: false
+        check: ">0"
+
+      max_rows:
+        type: integer
+        required: false
+        inherited: false
+        check: ">=1"
+
+      platform:
+        type: string
+        required: true
+        inherited: false
+
+      memory_budget_bytes:
+        type: integer
+        required: false
+        inherited: false
+
+      max_models:
+        type: integer
+        required: false
+        inherited: false
+        check: ">=1"
+
+      min_quality_score:
+        type: float
+        required: false
+        inherited: false
+
+      min_precision:
+        type: float
+        required: false
+        inherited: false
+
+      min_recall:
+        type: float
+        required: false
+        inherited: false
+
+    outputs:
+
+      artifacts:
+
+        # Resultado canónico de selección/configuración manual
+        selected_configuration:
+          type: file
+          required: true
+          extension: yaml
+
+        # Resumen tabular de candidatos/selección
+        candidate_summary:
+          type: file
+          required: true
+          extension: csv
+
+        # Reporte estructurado de la selección (manual o auto_ilp)
+        selection_report:
+          type: file
+          required: true
+          extension: yaml
+
+        # Dataset único de ventanas para inferencia
+        unique_windows:
+          type: file
+          required: true
+          extension: csv
+
+        # Dataset efectivo enviado a la plataforma
+        input_dataset_csv:
+          type: file
+          required: true
+          extension: csv
+
+        # Plan efectivo de ejecución por modelo
+        model_execution_plan:
+          type: file
+          required: true
+          extension: yaml
+
+        # Perfil canónico resumido de la configuración multi-modelo validada
+        system_profile:
+          type: file
+          required: true
+          extension: yaml
+
+        # Snapshot de configuración efectiva de ejecución
+        edge_run_config:
+          type: file
+          required: true
+          extension: yaml
+
+        # Proyecto edge generado para esta variante
+        edge_project_dir:
+          type: dir
+          required: true
+
+        # Bundle reproducible de firmware/binarios generados
+        platform_build_bundle:
+          type: dir
+          required: false
+
+        # Imagen principal de aplicación, si la plataforma la genera
+        application_image:
+          type: file
+          required: false
+
+        # Imágenes auxiliares de arranque/particiones, si aplican
+        bootloader_image:
+          type: file
+          required: false
+
+        partition_table_image:
+          type: file
+          required: false
+
+        # Configuración efectiva del SDK / toolchain de la plataforma
+        sdkconfig:
+          type: file
+          required: false
+
+        # Logs de build / flash / monitor
+        edge_build_log:
+          type: file
+          required: true
+          extension: txt
+
+        edge_flash_log:
+          type: file
+          required: true
+          extension: txt
+
+        edge_monitor_log:
+          type: file
+          required: true
+          extension: txt
+
+        # Resultados crudos de ejecución del sistema
+        edge_predictions:
+          type: file
+          required: true
+          extension: csv
+
+        edge_runtime_metrics_raw:
+          type: file
+          required: true
+          extension: json
+
+        # Resúmenes tabulares de análisis
+        metrics_models:
+          type: file
+          required: true
+          extension: csv
+
+        metrics_memory:
+          type: file
+          required: true
+          extension: csv
+
+        metrics_system_timing:
+          type: file
+          required: true
+          extension: csv
+
+        metrics_outcomes:
+          type: file
+          required: true
+          extension: csv
+
+        metrics_system_summary:
+          type: file
+          required: true
+          extension: yaml
+
+        # Informe consolidado de F08
+        report:
+          type: file
+          required: true
+          extension: html
+
+      exports:
+
+        selection_mode:
+          type: string
+          required: true
+
+        objective:
+          type: string
+          required: false
+
+        solver_status:
+          type: string
+          required: false
+
+        solver_iterations:
+          type: integer
+          required: false
+
+        solver_objective_value:
+          type: number
+          required: false
+
+        solver_lambda_last:
+          type: number
+          required: false
+
+        solver_gap_last:
+          type: number
+          required: false
+
+        parent_variants:
+          type: list
+          required: true
+
+        selected_variants:
+          type: list
+          required: true
+
+        platform:
+          type: string
+          required: true
+
+        Tu:
+          type: integer
+          required: true
+
+        OW:
+          type: integer
+          required: true
+
+        LT:
+          type: integer
+          required: true
+
+        PW:
+          type: integer
+          required: true
+
+        event_type_count:
+          type: integer
+          required: true
+
+        model_ids:
+          type: list
+          required: true
+
+        runtime_model_names:
+          type: list
+          required: true
+
+        MTI_MS:
+          type: integer
+          required: true
+
+        total_models_declared:
+          type: integer
+          required: true
+
+        total_models_selected:
+          type: integer
+          required: true
+
+        total_model_size_bytes:
+          type: integer
+          required: true
+
+        required_arena_bytes:
+          type: integer
+          required: true
+
+        operators_union:
+          type: list
+          required: true
+
+        compatible_input_signature:
+          type: boolean
+          required: true
+
+        configuration_edge_capable:
+          type: boolean
+          required: true
+
+        selection_completed:
+          type: boolean
+          required: true
+
+        phase_status:
+          type: string
+          required: true
+
+        phase_status_reason:
+          type: string
+          required: false
+
+        edge_run_completed:
+          type: boolean
+          required: true
+
+        # Alias legacy de edge_run_completed
+        esp_run_completed:
+          type: boolean
+          required: false
+
+        unique_windows_count:
+          type: integer
+          required: true
+
+        duplicate_windows_removed:
+          type: integer
+          required: true
+
+        selection_global_precision:
+          type: float
+          required: false
+
+        selection_global_recall:
+          type: float
+          required: false
+
+        selection_sum_effective_time_ms:
+          type: float
+          required: false
+
+        selection_max_exec_time_ms:
+          type: float
+          required: false
+
+        exec_time_policy:
+          type: string
+          required: true
+
+        max_exec_time_ms:
+          type: float
+          required: true
+
+        system_viable:
+          type: boolean
+          required: true
+
+      metrics:
+
+        execution_time:
+          type: float
+          required: true
+          nullable: true
+
+        n_inferences:
+          type: integer
+          required: true
+          nullable: true
+
+        unique_windows_count:
+          type: integer
+          required: true
+
+        evaluated_rows_total:
+          type: integer
+          required: true
+
+        models_evaluated:
+          type: integer
+          required: true
+
+        throughput_inf_per_sec:
+          type: float
+          required: false
+          nullable: true
+
+        # Métricas temporales del sistema
+        edge_mean_latency_ms:
+          type: float
+          required: true
+          nullable: true
+
+        edge_max_latency_ms:
+          type: float
+          required: true
+          nullable: true
+
+        edge_jitter_ms:
+          type: float
+          required: true
+          nullable: true
+
+        # Outcomes agregados
+        ok_rate:
+          type: float
+          required: true
+          nullable: true
+
+        offload_rate:
+          type: float
+          required: true
+          nullable: true
+
+        watchdog_rate:
+          type: float
+          required: true
+          nullable: true
+
+        # Calidad agregada del sistema
+        system_quality_score:
+          type: float
+          required: true
+          nullable: true
+
+        mean_model_quality_score:
+          type: float
+          required: false
+          nullable: true
+
+        # Memoria reportada por el runtime
+        edge_memory_peak_bytes:
+          type: integer
+          required: true
+          nullable: true
+
+        # Consistencia PC vs plataforma edge
+        pc_esp_agreement:
+          type: float
+          required: false
+          nullable: true

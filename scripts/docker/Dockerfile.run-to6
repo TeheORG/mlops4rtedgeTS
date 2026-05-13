@@ -1,0 +1,20 @@
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    coreutils \
+    git \
+    make \
+    tini \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /runner
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["bash", "-lc", "python3 --version && make --version"]

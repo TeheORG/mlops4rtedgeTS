@@ -1,0 +1,5 @@
+job_id,phase,variant,parent,parent_f02,make_target,script_target,strategy,pipeline,measure,direction,ow,pw,lt,dedup,seed
+f03_c01_synchro_battery_active_power_high_synchro_all_s1,f05,v241,v001,v210,variant5,script5,synchro,synchro_all,Battery_Active_Power,high,360,180,6,all,1
+f03_c01_synchro_battery_active_power_high_synchro_auto_s1,f05,v242,v001,v210,variant5,script5,synchro,synchro_auto,Battery_Active_Power,high,360,180,6,auto,1
+f03_c01_synchro_battery_active_power_high_synchro_none_s1,f05,v243,v001,v210,variant5,script5,synchro,synchro_none,Battery_Active_Power,high,360,180,6,none,1
+f03_c01_asynOW_battery_active_power_high_asynOW_none_s1,f05,v244,v009,v210,variant5,script5,asynOW,asynOW_none,Battery_Active_Power,high,360,180,6,none,1

@@ -1,0 +1,57 @@
+# ============================================================
+# MLOps4OFP — Entorno estable multiplataforma
+# Python 3.11 obligatorio
+# ============================================================
+#yaml
+# -----------------------------
+# Core científico
+# -----------------------------
+numpy==1.26.4
+pandas==2.2.2
+pyarrow==15.0.2
+scikit-learn==1.4.2
+matplotlib==3.8.4
+seaborn==0.13.2
+pyyaml==6.0.1
+tqdm==4.66.4
+fastparquet==2024.2.0
+
+# -----------------------------
+# Notebook / entorno interactivo
+# -----------------------------
+jupyter==1.0.0
+ipykernel==6.29.4
+
+statsmodels==0.14.6
+# -----------------------------
+# MLOps
+# -----------------------------
+mlflow==2.11.3
+dvc==3.48.4
+python-dotenv==1.0.1
+pathspec==0.11.2
+
+# -----------------------------
+# OpenAI SDK (para advise4)
+# -----------------------------
+openai==1.12.0
+
+# -----------------------------
+# TensorFlow (CPU universal)
+# IMPORTANTE:
+# - NO usar tensorflow-macos
+# - NO instalar ml-dtypes manualmente
+# TensorFlow 2.15.1 resuelve correctamente ml-dtypes~=0.2
+# -----------------------------
+tensorflow==2.15.1
+
+# === Runtime F07 ===
+flask>=2.2
+requests>=2.28
+matplotlib>=3.7
+pyserial>=3.5
+esptool>=4.7
+
+flatbuffers
+
+pulp

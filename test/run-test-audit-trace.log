@@ -1,0 +1,158 @@
+2026-03-31 01:46:45 | OK | make variant1 VARIANT=v105 RAW=data/raw.csv CLEANING=basic NAN_VALUES=[-999999] MAX_LINES=2000
+2026-03-31 01:46:50 | OK | make script1 VARIANT=v105
+2026-03-31 01:46:52 | OK | make register1 VARIANT=v105
+2026-03-31 01:46:52 | OK | make variant2 VARIANT=v205 PARENT=v105 BANDS=[40, 60, 80] STRATEGY=transitions NAN_MODE=keep
+2026-03-31 01:46:53 | OK | make script2 VARIANT=v205
+2026-03-31 01:46:54 | OK | make register2 VARIANT=v205
+2026-03-31 01:46:55 | OK | make variant3 VARIANT=v305 PARENT=v205 OW=6 LT=1 PW=1 STRATEGY=synchro NAN_MODE=discard
+2026-03-31 01:46:55 | OK | make script3 VARIANT=v305
+2026-03-31 01:46:56 | OK | make register3 VARIANT=v305
+2026-03-31 01:46:57 | FAIL | make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none (correctly failed)
+2026-03-31 01:46:57 | ERROR | EXPECTED FAIL: make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:46:57 | OK | make variant4 VARIANT=v405 NAME=Battery_Active_Power_any-to-80_100 PARENT=v305 OPERATOR=OR EVENTS=["Battery_Active_Power_0_40-to-80_100","Battery_Active_Power_40_60-to-80_100","Battery_Active_Power_60_80-to-80_100"]
+2026-03-31 01:47:40 | OK | make variant1 VARIANT=v105 RAW=data/raw.csv CLEANING=basic NAN_VALUES=[-999999] MAX_LINES=2000
+2026-03-31 01:47:45 | OK | make script1 VARIANT=v105
+2026-03-31 01:47:46 | OK | make register1 VARIANT=v105
+2026-03-31 01:47:47 | OK | make variant2 VARIANT=v205 PARENT=v105 BANDS=[40, 60, 80] STRATEGY=transitions NAN_MODE=keep
+2026-03-31 01:47:48 | OK | make script2 VARIANT=v205
+2026-03-31 01:47:49 | OK | make register2 VARIANT=v205
+2026-03-31 01:47:49 | OK | make variant3 VARIANT=v305 PARENT=v205 OW=6 LT=1 PW=1 STRATEGY=synchro NAN_MODE=discard
+2026-03-31 01:47:50 | OK | make script3 VARIANT=v305
+2026-03-31 01:47:51 | OK | make register3 VARIANT=v305
+2026-03-31 01:47:51 | FAIL | make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none (correctly failed)
+2026-03-31 01:47:51 | ERROR | EXPECTED FAIL: make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:47:52 | OK | make variant4 VARIANT=v405 NAME=Battery_Active_Power_any-to-80_100 PARENT=v305 OPERATOR=OR EVENTS=["Battery_Active_Power_0_40-to-80_100","Battery_Active_Power_40_60-to-80_100","Battery_Active_Power_60_80-to-80_100"]
+2026-03-31 01:50:32 | OK | make variant1 VARIANT=v105 RAW=data/raw.csv CLEANING=basic NAN_VALUES=[-999999] MAX_LINES=2000
+2026-03-31 01:50:38 | OK | make script1 VARIANT=v105
+2026-03-31 01:50:39 | OK | make register1 VARIANT=v105
+2026-03-31 01:50:39 | OK | make variant2 VARIANT=v205 PARENT=v105 BANDS=[40, 60, 80] STRATEGY=transitions NAN_MODE=keep
+2026-03-31 01:50:40 | OK | make script2 VARIANT=v205
+2026-03-31 01:50:41 | OK | make register2 VARIANT=v205
+2026-03-31 01:50:42 | OK | make variant3 VARIANT=v305 PARENT=v205 OW=6 LT=1 PW=1 STRATEGY=synchro NAN_MODE=discard
+2026-03-31 01:50:42 | OK | make script3 VARIANT=v305
+2026-03-31 01:50:44 | OK | make register3 VARIANT=v305
+2026-03-31 01:50:44 | FAIL | make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none (correctly failed)
+2026-03-31 01:50:44 | ERROR | EXPECTED FAIL: make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:50:44 | OK | make variant4 VARIANT=v405 NAME=Battery_Active_Power_any-to-80_100 PARENT=v305 OPERATOR=OR EVENTS=["Battery_Active_Power_0_40-to-80_100","Battery_Active_Power_40_60-to-80_100","Battery_Active_Power_60_80-to-80_100"]
+2026-03-31 01:50:45 | ERROR | FAILED: make script4 VARIANT=v405 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:50:46 | OK | make register4 VARIANT=v405
+2026-03-31 01:50:46 | OK | make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+2026-03-31 01:50:54 | ERROR | FAILED: make script5 VARIANT=v505 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:50:54 | ERROR | FAILED: make register5 VARIANT=v505 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:50:54 | OK | make variant6 VARIANT=v605 PARENT=v505
+2026-03-31 01:50:55 | ERROR | FAILED: make script6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:50:56 | OK | make register6 VARIANT=v605 (expected FAIL)
+2026-03-31 01:50:58 | OK | make register6 VARIANT=v605
+2026-03-31 01:50:58 | OK | make variant6 VARIANT=v606 PARENT=v505
+2026-03-31 01:50:59 | ERROR | FAILED: make script6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:50:59 | FAIL | make register6 VARIANT=v606 (correctly failed)
+2026-03-31 01:50:59 | ERROR | EXPECTED FAIL: make register6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:50:59 | ERROR | FAILED: make register6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:54:14 | OK | make variant1 VARIANT=v105 RAW=data/raw.csv CLEANING=basic NAN_VALUES=[-999999] MAX_LINES=2000
+2026-03-31 01:54:19 | OK | make script1 VARIANT=v105
+2026-03-31 01:54:19 | ERROR | FAILED: make register1 VARIANT=v105 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:54:19 | OK | make variant2 VARIANT=v205 PARENT=v105 BANDS=[40, 60, 80] STRATEGY=transitions NAN_MODE=keep
+2026-03-31 01:54:20 | OK | make script2 VARIANT=v205
+2026-03-31 01:54:20 | ERROR | FAILED: make register2 VARIANT=v205 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:54:21 | OK | make variant3 VARIANT=v305 PARENT=v205 OW=6 LT=1 PW=1 STRATEGY=synchro NAN_MODE=discard
+2026-03-31 01:54:22 | OK | make script3 VARIANT=v305
+2026-03-31 01:54:22 | ERROR | FAILED: make register3 VARIANT=v305 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:54:22 | FAIL | make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none (correctly failed)
+2026-03-31 01:54:22 | ERROR | EXPECTED FAIL: make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:54:22 | OK | make variant4 VARIANT=v405 NAME=Battery_Active_Power_any-to-80_100 PARENT=v305 OPERATOR=OR EVENTS=["FC_Active_Power_0_40-to-80_100","FC_Active_Power_40_60-to-80_100","FC_Active_Power_60_80-to-80_100"]
+2026-03-31 01:54:23 | OK | make script4 VARIANT=v405
+2026-03-31 01:54:23 | ERROR | FAILED: make register4 VARIANT=v405 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:54:23 | OK | make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+2026-03-31 01:55:20 | OK | make script5 VARIANT=v505
+2026-03-31 01:55:20 | ERROR | FAILED: make register5 VARIANT=v505 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:55:20 | OK | make variant6 VARIANT=v605 PARENT=v505
+2026-03-31 01:55:21 | ERROR | FAILED: make script6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:55:21 | FAIL | make register6 VARIANT=v605 (correctly failed)
+2026-03-31 01:55:21 | ERROR | EXPECTED FAIL: make register6 VARIANT=v605 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:55:21 | ERROR | FAILED: make register6 VARIANT=v605 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:55:21 | OK | make variant6 VARIANT=v606 PARENT=v505
+2026-03-31 01:55:22 | ERROR | FAILED: make script6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:55:22 | FAIL | make register6 VARIANT=v606 (correctly failed)
+2026-03-31 01:55:22 | ERROR | EXPECTED FAIL: make register6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 01:55:22 | ERROR | FAILED: make register6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:02:02 | OK | make variant1 VARIANT=v105 RAW=data/raw.csv CLEANING=basic NAN_VALUES=[-999999] MAX_LINES=2000
+2026-03-31 02:02:08 | OK | make script1 VARIANT=v105
+2026-03-31 02:02:08 | ERROR | FAILED: make register1 VARIANT=v105 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:02:08 | OK | make variant2 VARIANT=v205 PARENT=v105 BANDS=[40, 60, 80] STRATEGY=transitions NAN_MODE=keep
+2026-03-31 02:02:09 | OK | make script2 VARIANT=v205
+2026-03-31 02:02:10 | OK | make register2 VARIANT=v205
+2026-03-31 02:02:11 | OK | make variant3 VARIANT=v305 PARENT=v205 OW=6 LT=1 PW=1 STRATEGY=synchro NAN_MODE=discard
+2026-03-31 02:02:11 | OK | make script3 VARIANT=v305
+2026-03-31 02:02:13 | OK | make register3 VARIANT=v305
+2026-03-31 02:02:13 | FAIL | make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none (correctly failed)
+2026-03-31 02:02:13 | ERROR | EXPECTED FAIL: make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:02:13 | OK | make variant4 VARIANT=v405 NAME=Battery_Active_Power_any-to-80_100 PARENT=v305 OPERATOR=OR EVENTS=["FC_Active_Power_0_40-to-80_100","FC_Active_Power_40_60-to-80_100","FC_Active_Power_60_80-to-80_100"]
+2026-03-31 02:02:14 | OK | make script4 VARIANT=v405
+2026-03-31 02:02:15 | OK | make register4 VARIANT=v405
+2026-03-31 02:02:15 | OK | make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+2026-03-31 02:03:11 | OK | make script5 VARIANT=v505
+2026-03-31 02:03:11 | ERROR | FAILED: make register5 VARIANT=v505 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:03:12 | OK | make variant6 VARIANT=v605 PARENT=v505
+2026-03-31 02:03:12 | ERROR | FAILED: make script6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:03:13 | FAIL | make register6 VARIANT=v605 (correctly failed)
+2026-03-31 02:03:13 | ERROR | EXPECTED FAIL: make register6 VARIANT=v605 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:03:13 | ERROR | FAILED: make register6 VARIANT=v605 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:03:13 | OK | make variant6 VARIANT=v606 PARENT=v505
+2026-03-31 02:03:14 | ERROR | FAILED: make script6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:03:14 | FAIL | make register6 VARIANT=v606 (correctly failed)
+2026-03-31 02:03:14 | ERROR | EXPECTED FAIL: make register6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:03:16 | OK | make register6 VARIANT=v606
+2026-03-31 02:31:00 | OK | make variant1 VARIANT=v105 RAW=data/raw.csv CLEANING=basic NAN_VALUES=[-999999] MAX_LINES=2000
+2026-03-31 02:31:05 | OK | make script1 VARIANT=v105
+2026-03-31 02:31:06 | OK | make register1 VARIANT=v105
+2026-03-31 02:31:07 | OK | make variant2 VARIANT=v205 PARENT=v105 BANDS=[40, 60, 80] STRATEGY=transitions NAN_MODE=keep
+2026-03-31 02:31:08 | OK | make script2 VARIANT=v205
+2026-03-31 02:31:09 | OK | make register2 VARIANT=v205
+2026-03-31 02:31:10 | OK | make variant3 VARIANT=v305 PARENT=v205 OW=6 LT=1 PW=1 STRATEGY=synchro NAN_MODE=discard
+2026-03-31 02:31:10 | OK | make script3 VARIANT=v305
+2026-03-31 02:31:11 | OK | make register3 VARIANT=v305
+2026-03-31 02:31:12 | FAIL | make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none (correctly failed)
+2026-03-31 02:31:12 | ERROR | EXPECTED FAIL: make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:31:12 | OK | make variant4 VARIANT=v405 NAME=Battery_Active_Power_any-to-80_100 PARENT=v305 OPERATOR=OR EVENTS=["FC_Active_Power_0_40-to-80_100","FC_Active_Power_40_60-to-80_100","FC_Active_Power_60_80-to-80_100"]
+2026-03-31 02:31:13 | OK | make script4 VARIANT=v405
+2026-03-31 02:31:14 | OK | make register4 VARIANT=v405
+2026-03-31 02:31:14 | OK | make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+2026-03-31 02:32:10 | OK | make script5 VARIANT=v505
+2026-03-31 02:32:10 | ERROR | FAILED: make register5 VARIANT=v505 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:32:10 | OK | make variant6 VARIANT=v605 PARENT=v505
+2026-03-31 02:32:11 | ERROR | FAILED: make script6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:32:11 | FAIL | make register6 VARIANT=v605 (correctly failed)
+2026-03-31 02:32:11 | ERROR | EXPECTED FAIL: make register6 VARIANT=v605 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:32:11 | ERROR | FAILED: make register6 VARIANT=v605 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:32:12 | OK | make variant6 VARIANT=v606 PARENT=v505
+2026-03-31 02:32:12 | ERROR | FAILED: make script6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:32:12 | FAIL | make register6 VARIANT=v606 (correctly failed)
+2026-03-31 02:32:12 | ERROR | EXPECTED FAIL: make register6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:32:14 | OK | make register6 VARIANT=v606
+2026-03-31 02:34:08 | OK | make variant1 VARIANT=v105 RAW=data/raw.csv CLEANING=basic NAN_VALUES=[-999999] MAX_LINES=2000
+2026-03-31 02:34:13 | OK | make script1 VARIANT=v105
+2026-03-31 02:34:14 | OK | make register1 VARIANT=v105
+2026-03-31 02:34:15 | OK | make variant2 VARIANT=v205 PARENT=v105 BANDS=[40, 60, 80] STRATEGY=transitions NAN_MODE=keep
+2026-03-31 02:34:16 | OK | make script2 VARIANT=v205
+2026-03-31 02:34:17 | OK | make register2 VARIANT=v205
+2026-03-31 02:34:17 | OK | make variant3 VARIANT=v305 PARENT=v205 OW=6 LT=1 PW=1 STRATEGY=synchro NAN_MODE=discard
+2026-03-31 02:34:18 | OK | make script3 VARIANT=v305
+2026-03-31 02:34:19 | OK | make register3 VARIANT=v305
+2026-03-31 02:34:19 | FAIL | make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none (correctly failed)
+2026-03-31 02:34:19 | ERROR | EXPECTED FAIL: make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:34:20 | OK | make variant4 VARIANT=v405 NAME=Battery_Active_Power_any-to-80_100 PARENT=v305 OPERATOR=OR EVENTS=["FC_Active_Power_0_40-to-80_100","FC_Active_Power_40_60-to-80_100","FC_Active_Power_60_80-to-80_100"]
+2026-03-31 02:34:20 | OK | make script4 VARIANT=v405
+2026-03-31 02:34:22 | OK | make register4 VARIANT=v405
+2026-03-31 02:34:22 | OK | make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+2026-03-31 02:35:19 | OK | make script5 VARIANT=v505
+2026-03-31 02:35:24 | OK | make register5 VARIANT=v505
+2026-03-31 02:35:25 | OK | make variant6 VARIANT=v605 PARENT=v505
+2026-03-31 02:35:25 | ERROR | FAILED: make script6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:35:25 | FAIL | make register6 VARIANT=v605 (correctly failed)
+2026-03-31 02:35:25 | ERROR | EXPECTED FAIL: make register6 VARIANT=v605 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:35:27 | OK | make register6 VARIANT=v605
+2026-03-31 02:35:28 | OK | make variant6 VARIANT=v606 PARENT=v505
+2026-03-31 02:35:28 | ERROR | FAILED: make script6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:35:28 | FAIL | make register6 VARIANT=v606 (correctly failed)
+2026-03-31 02:35:28 | ERROR | EXPECTED FAIL: make register6 VARIANT=v606 | [INFO] Using local Python interpreter: python3.11
+2026-03-31 02:35:30 | OK | make register6 VARIANT=v606

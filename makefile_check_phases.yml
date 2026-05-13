@@ -1,0 +1,633 @@
+version: 1
+
+f0_example:
+  description: "Example spec showing all supported conventions"
+  files:
+    - path: outputs.yaml
+      required: true
+      not_empty: true
+      size: "> 0B & < 2MB"
+      checks:
+        - type: line_contains
+          value: "exports:"
+        - type: yaml_key
+          key: exports.Tu
+          required: true
+          constraints:
+            - numeric
+            - { gt: 0 }
+        - type: yaml_key
+          key: exports.n_rows
+          constraints:
+            - integer
+            - { gt: 0 }
+        - type: yaml_key
+          key: exports.n_columns
+          constraints:
+            - integer
+            - { gt: 0 }
+        - type: yaml_key
+          key: exports.measure_cols
+          constraints:
+            - not_empty
+    - path: params.yaml
+      size: "> 0B"
+      checks:
+        - type: yaml_key
+          key: parameters
+          required: false
+    - path: metadata.yaml
+      checks:
+        - type: yaml_key
+          key: lifecycle_state
+          required: false
+          constraints:
+            - { in: [VARIANT_CREATED, EXECUTION_RUNNING, EXECUTION_COMPLETED, EXECUTION_FAILED] }
+    - path: experiments/*
+      required: false
+      children:
+        - path: model.h5
+          required: true
+        - path: metrics.json
+          required: true
+          not_empty: true
+
+f01_explore:
+  files:
+    - path: 01_explore_dataset.parquet
+      required: true
+      size: "> 20MB"
+    - path: 01_explore_report.html
+      required: true
+      not_empty: true
+    - path: outputs.yaml
+      required: true
+      not_empty: true
+      checks:
+        - type: yaml_key
+          key: exports.Tu
+          constraints:
+            - numeric
+            - { gt: 0 }
+        - type: yaml_key
+          key: exports.n_rows
+          constraints:
+            - integer
+            - { gt: 0 }
+        - type: yaml_key
+          key: exports.n_columns
+          constraints:
+            - integer
+            - { gt: 0 }
+        - type: yaml_key
+          key: exports.measure_cols
+          constraints:
+            - not_empty
+    - path: params.yaml
+      required: true
+      size: "> 0B & < 1KB"
+    - path: metadata.yaml
+      required: true
+      not_empty: true
+
+f02_events:
+  files:
+    - path: 02_events_catalog.json
+      required: true
+      not_empty: true
+    - path: 02_events_report.html
+      required: true
+      not_empty: true
+    - path: 02_events.parquet
+      required: true
+    - path: outputs.yaml
+      required: true
+      not_empty: true
+    - path: metadata.yaml
+      required: true
+      not_empty: true
+    - path: params.yaml
+      required: true
+      size: "> 0B & < 1KB"
+
+f03_windows:
+  files:
+    - path: 03_events_catalog.json
+      required: true
+      not_empty: true
+    - path: 03_windows_report.html
+      required: true
+      not_empty: true
+    - path: 03_windows.parquet
+      required: true
+      not_empty: true
+    - path: outputs.yaml
+      required: true
+      not_empty: true
+    - path: metadata.yaml
+      required: true
+      not_empty: true
+    - path: params.yaml
+      required: true
+      size: "> 0B & < 1KB"
+
+f04_targets:
+  files:
+    - path: 04_targets_report.html
+      required: true
+      not_empty: true
+    - path: 04_targets.parquet
+      required: true
+      not_empty: true
+    - path: metadata.yaml
+      required: true
+      not_empty: true
+    - path: outputs.yaml
+      required: true
+      not_empty: true
+    - path: params.yaml
+      required: true
+      size: "> 0B & < 1KB"
+
+f05_modeling:
+  files:
+    - path: 05_modeling_model.h5
+      required: true
+    - path: 05_modeling_report.html
+      required: true
+      not_empty: true
+    - path: 05_modeling_parent_dataset.parquet
+      required: true
+    - path: 05_modeling_training_dataset.parquet
+      required: true
+    - path: outputs.yaml
+      required: true
+      not_empty: true
+    - path: experiments/*
+      required: true
+      children:
+        - path: model.h5
+          required: true
+        - path: metrics.json
+          required: true
+          not_empty: true
+
+f06_quant:
+  files:
+    - path: 06_calibration_dataset.parquet
+      required: true
+      size: "> 0B"
+    - path: 06_model_float.h5
+      required: true
+      size: "> 0B"
+    - path: 06_model_tflite.tflite
+      required: true
+      size: "> 0B"
+    - path: 06_quant_report.html
+      required: true
+      not_empty: true
+    - path: outputs.yaml
+      required: true
+      not_empty: true
+      checks:
+        - type: line_contains
+          value: "exports:"
+        - type: yaml_key
+          key: phase
+          required: true
+          constraints:
+            - { in: [f06_quant] }
+        - type: yaml_key
+          key: variant
+          required: true
+        - type: yaml_key
+          key: artifacts
+          required: true
+          constraints:
+            - not_empty
+        - type: yaml_key
+          key: exports.Tu
+          required: true
+          constraints:
+            - numeric
+            - { gt: 0 }
+        - type: yaml_key
+          key: exports.model_size_bytes
+          required: true
+          constraints:
+            - integer
+            - { gt: 0 }
+        - type: yaml_key
+          key: exports.footprint_estimated_bytes
+          required: true
+          constraints:
+            - integer
+            - { gt: 0 }
+        - type: yaml_key
+          key: exports.edge_capable
+          required: true
+        - type: yaml_key
+          key: exports.runtime_model_name
+          required: true
+          constraints:
+            - not_empty
+        - type: yaml_key
+          key: metrics.n_calibration_samples
+          required: true
+          constraints:
+            - integer
+            - { gt: 0 }
+        - type: yaml_key
+          key: metrics.tflm_compatible
+          required: true
+    - path: params.yaml
+      required: true
+      not_empty: true
+      size: "> 0B & < 5KB"
+      checks:
+        - type: yaml_key
+          key: phase
+          required: true
+          constraints:
+            - { in: [f06_quant] }
+        - type: yaml_key
+          key: variant
+          required: true
+        - type: yaml_key
+          key: parent
+          required: true
+        - type: yaml_key
+          key: parameters.parent_variant
+          required: true
+        - type: yaml_key
+          key: parameters.Tu
+          required: true
+          constraints:
+            - integer
+            - { gt: 0 }
+        - type: yaml_key
+          key: parameters.deployment.target
+          required: true
+        - type: yaml_key
+          key: parameters.deployment.require_int8
+          required: true
+    - path: metadata.yaml
+      required: true
+      not_empty: true
+      checks:
+        - type: yaml_key
+          key: created_at
+          required: true
+          constraints:
+            - not_empty
+        - type: yaml_key
+          key: lifecycle_state
+          required: true
+          constraints:
+            - { in: [VARIANT_CREATED, EXECUTION_RUNNING, EXECUTION_COMPLETED, EXECUTION_FAILED] }
+        - type: yaml_key
+          key: verified
+          required: true
+          constraints:
+            - { in: [none, true, false] }
+        - type: yaml_key
+          key: registred
+          required: true
+          constraints:
+            - { in: [none, true, false] }
+    - path: 06_model_tflite.tflite
+      required: false
+      size: "> 0B"
+    - path: eedu/eedu_manifest.yaml
+      required: true
+      not_empty: true
+      checks:
+        - type: yaml_key
+          key: phase
+          required: true
+          constraints:
+            - { in: [f06_quant] }
+        - type: yaml_key
+          key: parent_variant
+          required: true
+        - type: yaml_key
+          key: parent_phase
+          required: true
+          constraints:
+            - { in: [f05_modeling] }
+        - type: yaml_key
+          key: model_family
+          required: true
+          constraints:
+            - not_empty
+        - type: yaml_key
+          key: operators
+          required: true
+          constraints:
+            - not_empty
+        - type: yaml_key
+          key: model_size_bytes
+          required: true
+          constraints:
+            - integer
+            - { gt: 0 }
+        - type: yaml_key
+          key: runtime.tflite_version
+          required: true
+          constraints:
+            - not_empty
+
+f07_modval:
+  files:
+    - path: outputs.yaml
+      required: true
+      not_empty: true
+      checks:
+        - type: yaml_key
+          key: phase
+          required: true
+          constraints:
+            - { in: [f07_modval] }
+        - type: yaml_key
+          key: parent.phase
+          required: true
+          constraints:
+            - { in: [f06_quant] }
+        - type: yaml_key
+          key: parent.variant
+          required: true
+        - type: yaml_key
+          key: artifacts
+          required: true
+          constraints:
+            - not_empty
+        - type: yaml_key
+          key: exports.edge_capable
+          required: true
+          constraints:
+            - { eq: true }
+        - type: yaml_key
+          key: exports.phase_status_reason
+          required: true
+          constraints:
+            - not_empty
+        - type: yaml_key
+          key: exports.edge_run_completed
+          required: true
+          constraints:
+            - { eq: true }
+    - path: params.yaml
+      required: true
+      not_empty: true
+      size: "> 0B & < 8KB"
+      checks:
+        - type: yaml_key
+          key: phase
+          required: true
+          constraints:
+            - { in: [f07_modval] }
+        - type: yaml_key
+          key: variant
+          required: true
+        - type: yaml_key
+          key: parent
+          required: true
+        - type: yaml_key
+          key: parameters.parent_variant
+          required: true
+        - type: yaml_key
+          key: parameters.platform
+          required: true
+        - type: yaml_key
+          key: parameters.MTI_MS
+          required: true
+          constraints:
+            - integer
+            - { gt: 0 }
+    - path: metadata.yaml
+      required: true
+      not_empty: true
+      checks:
+        - type: yaml_key
+          key: lifecycle_state
+          required: true
+          constraints:
+            - { in: [VARIANT_CREATED, EXECUTION_RUNNING, EXECUTION_COMPLETED, EXECUTION_FAILED] }
+        - type: yaml_key
+          key: verified
+          required: true
+          constraints:
+            - { in: [none, true, false] }
+        - type: yaml_key
+          key: registred
+          required: true
+          constraints:
+            - { in: [none, true, false] }
+    - path: 07_edge_run_config.yaml
+      required: false
+      not_empty: true
+      checks:
+        - type: yaml_key
+          key: platform
+          required: true
+        - type: yaml_key
+          key: edge_capable
+          required: false
+    - path: 07_model_profile.yaml
+      required: false
+      not_empty: true
+    - path: 07_esp_build_log.txt
+      required: false
+      not_empty: true
+    - path: 07_esp_flash_log.txt
+      required: false
+      not_empty: true
+    - path: 07_evaluation_dataset.csv
+      required: false
+      not_empty: true
+    - path: 07_input_dataset.csv
+      required: false
+      not_empty: true
+    - path: esp32_project
+      required: false
+      children:
+        - path: CMakeLists.txt
+          required: true
+    - path: metrics_models.csv
+      required: false
+      not_empty: true
+    - path: metrics_memory.csv
+      required: false
+      not_empty: true
+    - path: metrics_system_timing.csv
+      required: false
+      not_empty: true
+    - path: 07_esp_monitor_log.txt
+      required: false
+      not_empty: true
+
+f08_sysval:
+  files:
+    - path: outputs.yaml
+      required: true
+      not_empty: true
+      checks:
+        - type: yaml_key
+          key: phase
+          required: true
+          constraints:
+            - { in: [f08_sysval] }
+        - type: yaml_key
+          key: parent.phase
+          required: true
+          constraints:
+            - { in: [f07_modval] }
+        - type: yaml_key
+          key: parent.variants
+          required: true
+        - type: yaml_key
+          key: artifacts
+          required: true
+          constraints:
+            - not_empty
+        - type: yaml_key
+          key: exports.selection_mode
+          required: true
+          constraints:
+            - not_empty
+        - type: yaml_key
+          key: exports.configuration_edge_capable
+          required: true
+        - type: yaml_key
+          key: exports.selection_completed
+          required: true
+          constraints:
+            - { eq: true }
+        - type: yaml_key
+          key: exports.system_viable
+          required: true
+        - type: yaml_key
+          key: metrics.models_evaluated
+          required: true
+          constraints:
+            - integer
+            - { gte: 0 }
+        - type: yaml_key
+          key: exports.requested_parent_variants
+          required: true
+          constraints:
+            - not_empty
+    - path: params.yaml
+      required: true
+      not_empty: true
+      size: "> 0B & < 8KB"
+      checks:
+        - type: yaml_key
+          key: phase
+          required: true
+          constraints:
+            - { in: [f08_sysval] }
+        - type: yaml_key
+          key: variant
+          required: true
+        - type: yaml_key
+          key: parent
+          required: true
+        - type: yaml_key
+          key: parameters.platform
+          required: true
+        - type: yaml_key
+          key: parameters.MTI_MS
+          required: true
+          constraints:
+            - integer
+            - { gt: 0 }
+    - path: metadata.yaml
+      required: true
+      not_empty: true
+      checks:
+        - type: yaml_key
+          key: lifecycle_state
+          required: true
+          constraints:
+            - { in: [VARIANT_CREATED, EXECUTION_RUNNING, EXECUTION_COMPLETED, EXECUTION_FAILED] }
+        - type: yaml_key
+          key: verified
+          required: true
+          constraints:
+            - { in: [none, true, false] }
+        - type: yaml_key
+          key: registred
+          required: true
+          constraints:
+            - { in: [none, true, false] }
+    - path: 08_selected_configuration.yaml
+      required: false
+      not_empty: true
+      checks:
+        - type: yaml_key
+          key: selection_completed
+          required: true
+        - type: yaml_key
+          key: configuration_edge_capable
+          required: true
+        - type: yaml_key
+          key: selection_mode
+          required: true
+        - type: yaml_key
+          key: platform
+          required: true
+        - type: yaml_key
+          key: parent.variants
+          required: false
+    - path: 08_edge_run_config.yaml
+      required: false
+      not_empty: true
+    - path: 08_selection_report.yaml
+      required: false
+      not_empty: true
+    - path: 08_candidate_summary.csv
+      required: false
+      not_empty: true
+    - path: 08_unique_windows.csv
+      required: false
+      not_empty: true
+    - path: 08_system_profile.yaml
+      required: false
+      not_empty: true
+    - path: 08_edge_predictions.csv
+      required: false
+      not_empty: true
+    - path: 08_edge_runtime_metrics_raw.json
+      required: false
+      not_empty: true
+    - path: 08_model_execution_plan.yaml
+      required: false
+      not_empty: true
+    - path: 08_report.html
+      required: false
+      not_empty: true
+    - path: 08_esp_build_log.txt
+      required: false
+      not_empty: true
+    - path: 08_esp_flash_log.txt
+      required: false
+      not_empty: true
+    - path: 08_esp_monitor_log.txt
+      required: false
+      not_empty: true
+    - path: metrics_models.csv
+      required: false
+      not_empty: true
+    - path: metrics_memory.csv
+      required: false
+      not_empty: true
+    - path: metrics_system_timing.csv
+      required: false
+      not_empty: true
+    - path: metrics_outcomes.csv
+      required: false
+      not_empty: true
+    - path: metrics_system_summary.yaml
+      required: false
+      not_empty: true

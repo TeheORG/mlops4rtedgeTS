@@ -1,0 +1,143 @@
+experiment:
+  name: jenofonte
+  description: Evaluación de variantes F2 orientadas a estados límite con pipeline downstream fijo
+  output_root: test/jenofonte
+  setup_cfg: setup/local.yaml
+  clean_before_run: true
+
+global:
+  event_parent: v000
+  raw: data/raw.csv
+  cleaning: basic
+  nan_values: [-999999]
+  error_values:
+    MG-LV-MSB_AC_Voltage:
+    - 0.0
+    Receiving_Point_AC_Voltage:
+    - 0.0
+    Island_mode_MCCB_AC_Voltage:
+    - 0.0
+    Island_mode_MCCB_Frequency:
+    - -327.679993
+    - 0.0
+    MG-LV-MSB_Frequency:
+    - -327.679993
+    - 0.0
+    Outlet_Temperature:
+    - -52.5
+    Inlet_Temperature_of_Chilled_Water:
+    - -52.5
+    - -52.400002
+    - -52.299999
+  nan_mode_f02: discard
+  event_strategy: transitions
+  nan_mode_f03: discard
+  imbalance_strategy: rare_events
+  imbalance_max_maj: 20000
+  model_family: cnn1d
+  seeds: [1]
+
+phase2:
+  variants:
+    - id: v220
+      bands: [10, 25, 50, 75, 90]
+      label: "baseline"
+    - id: v221
+      bands: [20, 50, 80]
+      label: "coarse"
+    - id: v222
+      bands: [5, 15, 50, 85, 95]
+      label: "extreme_strong"
+    - id: v223
+      bands: [10, 20, 50, 80, 90]
+      label: "extreme_soft"
+    - id: v224
+      bands: [10, 25, 75, 90]
+      label: "compressed_mid"
+
+phase3:
+  base_combinations:
+    - id: c01
+      ow: 90
+      pw: 30
+      lt: 6
+      label: "OW=15min|PW=5min"
+    - id: c02
+      ow: 180
+      pw: 30
+      lt: 6
+      label: "OW=30min|PW=5min"
+    - id: c03
+      ow: 360
+      pw: 30
+      lt: 6
+      label: "OW=1h|PW=5min"
+
+    - id: c04
+      ow: 90
+      pw: 90
+      lt: 6
+      label: "OW=15min|PW=15min"
+    - id: c05
+      ow: 180
+      pw: 90
+      lt: 6
+      label: "OW=30min|PW=15min"
+    - id: c06
+      ow: 360
+      pw: 90
+      lt: 6
+      label: "OW=1h|PW=15min"
+    - id: c07
+      ow: 1080
+      pw: 90
+      lt: 6
+      label: "OW=3h|PW=15min"
+
+    - id: c08
+      ow: 180
+      pw: 180
+      lt: 6
+      label: "OW=30min|PW=30min"
+    - id: c09
+      ow: 360
+      pw: 180
+      lt: 6
+      label: "OW=1h|PW=30min"
+    - id: c10
+      ow: 1080
+      pw: 180
+      lt: 6
+      label: "OW=3h|PW=30min"
+
+    - id: c11
+      ow: 360
+      pw: 360
+      lt: 6
+      label: "OW=1h|PW=1h"
+    - id: c12
+      ow: 1080
+      pw: 360
+      lt: 6
+      label: "OW=3h|PW=1h"
+
+  strategies:
+    - synchro
+
+phase4:
+  measures:
+    - name: Battery_Active_Power
+      directions: [high, low]
+    - name: PVPCS_Active_Power
+      directions: [high, low]
+    - name: FC_Active_Power
+      directions: [high, low]
+    - name: Outlet_Temperature
+      directions: [high, low]
+
+phase5:
+  strategy: rare_events
+  pipelines:
+    - id: synchro_all
+      strategy: synchro
+      dedup: all

@@ -1,0 +1,30 @@
+# Ejemplo de configuración remota para uso con GitHub + Dagshub
+# Copiar a `setup/remote.yaml` y sustituir valores por los de tu equipo.
+
+git:
+  # URL del repositorio remoto donde publicar (SSH o HTTPS)
+  remote_url: "git@github.com:grupoXX/mlops4ofp-grupoXX.git"  # o https://github.com/grupoXX/...
+  publish_remote_name: "publish"
+
+dvc:
+  # Defina el backend/URL para el remote DVC. Ejemplos:
+  # - Dagshub: use la URL provista por Dagshub o la configuración guiada
+  # - S3: s3://bucket/path
+  # - Azure: azure://container/path
+  storage:
+    url: "dagshub://grupoXX/mlops4ofp-grupoXX"  # placeholder — sustituir por la URL correcta
+    type: "dagshub"
+
+mlflow:
+  # URI de tracking MLflow (Dagshub usa un endpoint específico)
+  tracking_uri: "https://dagshub.com/grupoXX/mlops4ofp-grupoXX.mlflow"
+
+auth:
+  # Variables de entorno recomendadas para autenticación en Dagshub
+  dagshub_user_env: "DAGSHUB_USER"
+  dagshub_token_env: "DAGSHUB_TOKEN"
+
+notes: |
+  - Reemplace `grupoXX` por su organización/usuario.
+  - Exporte `DAGSHUB_USER` y `DAGSHUB_TOKEN` en su entorno (o configure en CI).
+  - Tras editar, ejecute: `make setup SETUP_CFG=setup/remote.yaml` y `make check-setup`.

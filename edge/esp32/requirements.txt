@@ -1,0 +1,10 @@
+# Python dependencies for ESP32 data scripts
+pyserial            # Serial port communication
+esptool>=4.7
+flatbuffers>=2.0
+matplotlib
+numpy
+pyyaml
+#csv
+#subprocess
+pathlib

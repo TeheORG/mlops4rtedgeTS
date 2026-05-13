@@ -1,0 +1,72 @@
+experiment:
+  name: aticus
+  description: Comparación synchro vs asynOW sobre las mejores combinaciones OW/PW
+  output_root: test/aticus
+  setup_cfg: setup/local.yaml
+  clean_before_run: true
+
+global:
+  raw: data/raw.csv
+  cleaning: basic
+  nan_values: [-999999]
+  bands: [10, 25, 50, 75, 90]
+  nan_mode_f02: discard
+  event_parent: v210
+  event_strategy: transitions
+  nan_mode_f03: discard
+  imbalance_strategy: rare_events
+  imbalance_max_maj: 20000
+  model_family: cnn1d
+  seeds: [1, 2, 3]
+
+phase3:
+  parent_f02: v210
+  base_combinations:
+    - id: c01
+      ow: 360
+      pw: 180
+      lt: 6
+      label: "OW=1h|PW=30min"
+    - id: c02
+      ow: 360
+      pw: 360
+      lt: 6
+      label: "OW=1h|PW=1h"
+    - id: c03
+      ow: 180
+      pw: 180
+      lt: 6
+      label: "OW=30min|PW=30min"
+
+  strategies:
+    - synchro
+    - asynOW
+
+
+phase4:
+  parent_f02: v210
+  measures:
+    - name: Battery_Active_Power
+      directions: [high, low]
+    - name: PVPCS_Active_Power
+      directions: [high, low]
+    - name: FC_Active_Power
+      directions: [high, low]
+    - name: Outlet_Temperature
+      directions: [high, low]
+
+
+phase5:
+  strategy: rare_events
+  pipelines:
+    - id: synchro_none
+      strategy: synchro
+      dedup: none
+
+    - id: synchro_auto
+      strategy: synchro
+      dedup: auto
+
+    - id: asynOW_none
+      strategy: asynOW
+      dedup: none

@@ -1,0 +1,47 @@
+[37s] make variant1 VARIANT=v100 RAW=data/raw.csv CLEANING=basic NAN_VALUES='[-999999]'
+[5s] make variant1 VARIANT=v101 RAW=data/raw.csv CLEANING=basic NAN_VALUES='[-999999]' FIRST_LINE=1 MAX_LINES=50000
+[44s] make variant2 VARIANT=v200 PARENT=v100 BANDS="[40, 60, 80]" STRATEGY=transitions NAN_MODE=keep
+[41s] make variant2 VARIANT=v201 PARENT=v100 BANDS="[10, 20, 40, 60, 80, 90]" STRATEGY=transitions NAN_MODE=keep
+[10s] make variant3 VARIANT=v300 PARENT=v200 OW=6 LT=1 PW=1 STRATEGY=synchro NAN_MODE=discard
+[9s] make variant3 VARIANT=v301 PARENT=v200 OW=6 LT=1 PW=1 STRATEGY=asynOW NAN_MODE=discard
+[10s] make variant3 VARIANT=v302 PARENT=v201 OW=6 LT=1 PW=1 STRATEGY=asynOW NAN_MODE=discard
+[1s] make variant4 VARIANT=v400 NAME=Battery_Active_Power_any-to-80_100 PARENT=v300 OPERATOR=OR EVENTS='["Battery_Active_Power_0_40-to-80_100","Battery_Active_Power_40_60-to-80_100","Battery_Active_Power_60_80-to-80_100"]'
+[1s] make variant4 VARIANT=v401 NAME=Battery_Active_Power_Set_Response_any-to-80_100 PARENT=v300 OPERATOR=OR EVENTS='["Battery_Active_Power_Set_Response_0_40-to-80_100","Battery_Active_Power_Set_Response_40_60-to-80_100","Battery_Active_Power_Set_Response_60_80-to-80_100"]'
+[1s] make variant4 VARIANT=v402 NAME=PVPCS_Active_Power_any-to-80_100 PARENT=v300 OPERATOR=OR EVENTS='["PVPCS_Active_Power_0_40-to-80_100","PVPCS_Active_Power_40_60-to-80_100","PVPCS_Active_Power_60_80-to-80_100"]'
+[2s] make variant4 VARIANT=v403 NAME=GE_Active_Power_any-to-80_100 PARENT=v300 OPERATOR=OR EVENTS='["GE_Active_Power_0_40-to-80_100","GE_Active_Power_40_60-to-80_100","GE_Active_Power_60_80-to-80_100"]'
+[2s] make variant4 VARIANT=v404 NAME=GE_Body_Active_Power_any-to-80_100 PARENT=v300 OPERATOR=OR EVENTS='["GE_Body_Active_Power_0_40-to-80_100","GE_Body_Active_Power_40_60-to-80_100","GE_Body_Active_Power_60_80-to-80_100"]'
+[2s] make variant4 VARIANT=v405 NAME=GE_Body_Active_Power_Set_Response_any-to-80_100 PARENT=v300 OPERATOR=OR EVENTS='["GE_Body_Active_Power_Set_Response_0_40-to-80_100","GE_Body_Active_Power_Set_Response_40_60-to-80_100","GE_Body_Active_Power_Set_Response_60_80-to-80_100"]'
+[2s] make variant4 VARIANT=v406 NAME=FC_Active_Power_FC_END_Set_any-to-80_100 PARENT=v300 OPERATOR=OR EVENTS='["FC_Active_Power_FC_END_Set_0_40-to-80_100","FC_Active_Power_FC_END_Set_40_60-to-80_100","FC_Active_Power_FC_END_Set_60_80-to-80_100"]'
+[1s] make variant4 VARIANT=v407 NAME=FC_Active_Power_any-to-80_100 PARENT=v300 OPERATOR=OR EVENTS='["FC_Active_Power_0_40-to-80_100","FC_Active_Power_40_60-to-80_100","FC_Active_Power_60_80-to-80_100"]'
+[1s] make variant4 VARIANT=v408 NAME=MG-LV-MSB_AC_Voltage_any-to-80_100 PARENT=v300 OPERATOR=OR EVENTS='["MG-LV-MSB_AC_Voltage_0_40-to-80_100","MG-LV-MSB_AC_Voltage_40_60-to-80_100","MG-LV-MSB_AC_Voltage_60_80-to-80_100"]'
+[171s] make variant5 VARIANT=v500 PARENT=v400 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+[171s] make variant5 VARIANT=v501 PARENT=v401 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+[259s] make variant5 VARIANT=v502 PARENT=v402 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+[265s] make variant5 VARIANT=v503 PARENT=v403 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+[1849s] make variant5 VARIANT=v504 PARENT=v404 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+[7s] make variant5 VARIANT=v505 PARENT=v405 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+[170s] make variant5 VARIANT=v506 PARENT=v406 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+[171s] make variant5 VARIANT=v507 PARENT=v407 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+[7s] make variant5 VARIANT=v508 PARENT=v408 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+[11s] make variant6 VARIANT=v600 PARENT=v500
+[12s] make variant6 VARIANT=v601 PARENT=v501
+[12s] make variant6 VARIANT=v602 PARENT=v502
+[11s] make variant6 VARIANT=v603 PARENT=v503
+[11s] make variant6 VARIANT=v604 PARENT=v504
+[6s] make variant6 VARIANT=v605 PARENT=v505
+[11s] make variant6 VARIANT=v606 PARENT=v506
+[11s] make variant6 VARIANT=v607 PARENT=v507
+[7s] make variant6 VARIANT=v608 PARENT=v508
+[2s] make variant7 VARIANT=v700 PARENT=v600 PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01
+[1s] make variant7 VARIANT=v701 PARENT=v601 PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01
+[1s] make variant7 VARIANT=v702 PARENT=v602 PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01
+[2s] make variant7 VARIANT=v703 PARENT=v603 PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01
+[2s] make variant7 VARIANT=v704 PARENT=v604 PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01
+[1s] make variant7 VARIANT=v705 PARENT=v605 PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01
+[2s] make variant7 VARIANT=v706 PARENT=v606 PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01
+[2s] make variant7 VARIANT=v707 PARENT=v607 PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01
+[1s] make variant7 VARIANT=v708 PARENT=v608 PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01
+[1s] make variant8 VARIANT=v800 PARENTS="[v700, v701, v702, v703, v704, v705, v706, v707, v708]" PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01
+[1s] make variant8 VARIANT=v801 PARENTS="[v700, v701, v702, v703, v704, v705, v706, v707, v708]" PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01 SELECTION_MODE=auto_ilp OBJECTIVE=max_global_recall
+[1s] make variant8 VARIANT=v802 PARENTS="[v700, v701, v702, v703, v704, v705, v706, v707, v708]" PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01 SELECTION_MODE=auto_ilp OBJECTIVE=max_tp
+[1s] make variant8 VARIANT=v803 PARENTS="[v700, v701, v702, v703, v704, v705, v706, v707, v708]" PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01 SELECTION_MODE=auto_ilp OBJECTIVE=max_tp MIN_PRECISION=0.01 MIN_RECALL=0.05
