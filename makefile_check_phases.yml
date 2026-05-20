@@ -92,13 +92,13 @@ f01_explore:
 
 f02_events:
   files:
-    - path: 02_events_catalog.json
+    - path: 02_series_stats.json
       required: true
       not_empty: true
-    - path: 02_events_report.html
+    - path: 02_series_report.html
       required: true
       not_empty: true
-    - path: 02_events.parquet
+    - path: 02_series.parquet
       required: true
     - path: outputs.yaml
       required: true
@@ -112,9 +112,6 @@ f02_events:
 
 f03_windows:
   files:
-    - path: 03_events_catalog.json
-      required: true
-      not_empty: true
     - path: 03_windows_report.html
       required: true
       not_empty: true

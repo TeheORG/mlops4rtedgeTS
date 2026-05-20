@@ -142,7 +142,7 @@ phases:
           required: true
 
 # ------------------------------------------------------------
-# F02 — BUILD EVENTS DATASET
+# F02 — BUILD TIME SERIES DATASET
 # ------------------------------------------------------------
 
   f02_events:
@@ -162,42 +162,33 @@ phases:
         required: true
         inherited: true
 
-      strategy:
+      measure_name:
         type: string
         required: true
         inherited: false
-        allowed:
-          - levels
-          - transitions
-          - both
-
-      bands:
-        type: list
-        required: true
-        inherited: false
-        items:
-          type: number
-
-      nan_mode:
-        type: string
-        required: true
-        inherited: false
-        allowed:
-          - keep
-          - discard
 
     outputs:
 
       artifacts:
 
-        events:
+        series:
           type: file
           required: true
           extension: parquet
 
-        catalog:
+        stats:
           type: file
           required: true
+          extension: json
+
+        events:
+          type: file
+          required: false
+          extension: parquet
+
+        catalog:
+          type: file
+          required: false
           extension: json
 
         report:
@@ -211,12 +202,28 @@ phases:
           type: integer
           required: true
 
-        n_events:
+        measure_name:
+          type: string
+          required: true
+
+        epoch_col:
+          type: string
+          required: true
+
+        value_col:
+          type: string
+          required: true
+
+        n_rows:
           type: integer
           required: true
 
-        n_types:
+        n_non_nan:
           type: integer
+          required: true
+
+        nan_ratio:
+          type: float
           required: true
 
       metrics:
@@ -227,11 +234,11 @@ phases:
 
         n_rows_in:
           type: integer
-          required: true
+          required: false
 
         n_rows_out:
           type: integer
-          required: true
+          required: false
 
         nan_ratio_in:
           type: float
@@ -284,8 +291,6 @@ phases:
         allowed:
           - synchro     # ventanas deslizantes con paso fijo Tu
           - asynOW      # OW deslizante, PW anclada a eventos
-          - withinPW    # OW dentro de PW
-          - asynPW      # PW deslizante, OW anclada a eventos
 
       nan_mode:
         type: string
@@ -303,11 +308,6 @@ phases:
           type: file
           required: true
           extension: parquet
-
-        catalog:
-          type: file
-          required: true
-          extension: json
 
         report:
           type: file
@@ -332,10 +332,6 @@ phases:
           type: integer
           required: true
 
-        event_type_count:
-          type: integer
-          required: true
-
         window_strategy:
           type: string
           required: true
@@ -354,7 +350,7 @@ phases:
           type: float
           required: true
 
-        n_events_in:
+        n_rows_in:
           type: integer
           required: true
 
@@ -396,33 +392,27 @@ phases:
         required: false
         inherited: true
 
-      event_type_count:
-        type: integer
-        required: false
-        inherited: true
-
       # Nombre legible que viajará aguas abajo (F05, F06...)
       prediction_name:
         type: string
-        required: true
+        required: false
         inherited: false
         regex: "^[a-z0-9_]+$"
 
-      # Operador lógico aplicado sobre eventos de PW
-      target_operator:
+      # Umbral porcentual entre el mínimo y máximo exportados por F02
+      threshold:
+        type: float
+        required: true
+        inherited: false
+
+      # Sentido de activación del objetivo sobre la ventana de predicción
+      direction:
         type: string
         required: true
         inherited: false
         allowed:
-          - OR
-
-      # Lista de nombres de tipos de evento (según catálogo F02)
-      target_event_types:
-        type: list
-        required: true
-        inherited: false
-        items:
-          type: string
+          - high
+          - low
 
     outputs:
 
@@ -457,24 +447,38 @@ phases:
           type: integer
           required: false
 
-        event_type_count:
-          type: integer
-          required: true
-
         # Definición congelada del objetivo
         prediction_name:
           type: string
           required: true
 
-        target_operator:
+        measure_name:
           type: string
           required: true
 
-        target_event_types:
-          type: list
+        value_col:
+          type: string
           required: true
-          items:
-            type: string
+
+        direction:
+          type: string
+          required: true
+
+        threshold_percentage:
+          type: float
+          required: true
+
+        threshold_value:
+          type: float
+          required: true
+
+        min_value:
+          type: float
+          required: true
+
+        max_value:
+          type: float
+          required: true
 
         # Estadísticas resultantes
         n_windows:
@@ -496,6 +500,10 @@ phases:
           required: true
 
         positive_ratio:
+          type: float
+          required: true
+
+        negative_ratio:
           type: float
           required: true
 
@@ -544,11 +552,6 @@ phases:
         required: false
         inherited: true
 
-      event_type_count:
-        type: integer
-        required: false
-        inherited: true
-
       # -------------------------------------------------
       # Modelo
       # -------------------------------------------------
@@ -558,7 +561,6 @@ phases:
         required: true
         allowed:
           - dense_bow
-          - sequence_embedding
           - cnn1d
 
       # -------------------------------------------------
@@ -584,10 +586,7 @@ phases:
             units: [64, 128]
             dropout: [0.0, 0.2]
           dense_bow: {}
-          sequence_embedding:
-            embed_dim: [64, 128]
           cnn1d:
-            embed_dim: [64]
             filters: [64, 128]
             kernel_size: [3, 5]
 
@@ -697,10 +696,6 @@ phases:
           required: true
 
         PW:
-          type: integer
-          required: true
-
-        event_type_count:
           type: integer
           required: true
 
@@ -829,10 +824,6 @@ phases:
         required: false
         inherited: true
 
-      event_type_count:
-        type: integer
-        required: false
-        inherited: true
 
       # -------------------------------------------------
       # Plataforma de despliegue (primera aparición)
@@ -935,10 +926,6 @@ phases:
           type: integer
           required: true
 
-        event_type_count:
-          type: integer
-          required: true
-
         prediction_name:
           type: string
           required: true
@@ -977,6 +964,22 @@ phases:
 
         operators:
           type: list
+          required: false
+
+        input_sequence_column:
+          type: string
+          required: false
+
+        input_max_len:
+          type: integer
+          required: false
+
+        normalization_mean:
+          type: float
+          required: false
+
+        normalization_std:
+          type: float
           required: false
 
       metrics:

@@ -379,6 +379,11 @@ def compute_parent_hashes(phase: str, params: dict) -> dict:
     for p in parents:
         parent_outputs = Path("executions") / parent_phase / p / "outputs.yaml"
         if parent_outputs.exists():
+            with parent_outputs.open("r") as f:
+                parent_data = yaml.safe_load(f)
+                measure_cols = parent_data.get("exports", {}).get("measure_cols", [])
+                if measure and measure not in measure_cols:
+                    raise ValueError(f"Invalid measure '{measure}'. Must be one of: {measure_cols}")
             hashes[p] = _sha256_file(parent_outputs)
     return hashes
     

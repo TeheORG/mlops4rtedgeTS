@@ -529,15 +529,15 @@ VARIANTS_DIR2 = executions/$(PHASE2)
 
 variant2: check-variant-format
 	@test -n "$(PARENT)"   || (echo "[ERROR] You must specify PARENT=vY_XXXX (parent F01 variant)"; exit 1)
-	@test -n "$(STRATEGY)" || (echo "[ERROR] You must specify STRATEGY=levels|transitions|both"; exit 1)
-	@test -n "$(BANDS)"    || (echo "[ERROR] You must specify BANDS=[...percentages...]"; exit 1)
-	@test -n "$(NAN_MODE)" || (echo "[ERROR] You must specify NAN_MODE=keep|discard"; exit 1)
+	@test -n "$(MEASURE)"  || (echo "[ERROR] You must specify MEASURE=<column_name>"; exit 1)
+	@$(eval MEASURE_COLS := $(shell $(PYTHON) -c "import yaml; d=yaml.safe_load(open('executions/f01_explore/$(PARENT)/outputs.yaml', encoding='utf-8')); print(' '.join(d.get('exports', {}).get('measure_cols', [])))"))
+	@if ! echo "$(MEASURE_COLS)" | grep -qw "$(MEASURE)"; then \
+	  echo "[ERROR] Invalid MEASURE. Must be one of: $(MEASURE_COLS)"; exit 1; \
+	fi
 
 	@$(eval EXTRA_FLAGS := )
 	@$(eval EXTRA_FLAGS += PARENT=$(PARENT))
-	@$(eval EXTRA_FLAGS += strategy=$(STRATEGY))
-	@$(eval EXTRA_FLAGS += bands=$(BANDS))
-	@$(eval EXTRA_FLAGS += nan_mode=$(NAN_MODE))
+	@$(eval EXTRA_FLAGS += measure_name=$(MEASURE))
 	@$(if $(strip $(TU)),$(eval EXTRA_FLAGS += Tu=$(TU)))
 
 	@$(MAKE) variant-generic \
@@ -570,12 +570,12 @@ remove2-all:
 
 help2:
 	@echo "==============================================="
-	@echo " 02 — BUILD EVENTS DATASET"
+	@echo " 02 — BUILD TIME SERIES DATASET"
 	@echo "==============================================="
 	@echo ""
 	@echo " Create:"
 	@echo "   make variant2 VARIANT=v201 PARENT=v001 \\"
-	@echo "       STRATEGY=levels BANDS='[0.1, 0.2, 0.3]' NAN_MODE=discard"
+	@echo "       MEASURE=Battery_Active_Power"
 	@echo ""
 	@echo " Execution:"
 	@echo "   make script2 VARIANT=v201"
@@ -621,7 +621,7 @@ variant3: check-variant-format
 	@test -n "$(OW)"       || (echo "[ERROR] You must specify OW=<int>"; exit 1)
 	@test -n "$(LT)"       || (echo "[ERROR] You must specify LT=<int>"; exit 1)
 	@test -n "$(PW)"       || (echo "[ERROR] You must specify PW=<int>"; exit 1)
-	@test -n "$(STRATEGY)" || (echo "[ERROR] You must specify STRATEGY=synchro|asynOW|withinPW|asynPW"; exit 1)
+	@test -n "$(STRATEGY)" || (echo "[ERROR] You must specify STRATEGY=synchro|asynOW"; exit 1)
 	@test -n "$(NAN_MODE)" || (echo "[ERROR] You must specify NAN_MODE=keep|discard"; exit 1)
 
 	@$(eval EXTRA_FLAGS := )
@@ -718,9 +718,9 @@ VARIANTS_DIR4 = executions/$(PHASE4)
 ############################################
 # Usage:
 #   make variant4 VARIANT=v401 PARENT=v301 \
-#        NAME=battery_overheat \
-#        OPERATOR=OR \
-#        EVENTS='["Battery_Active_Power_80_100-to-100_120"]'
+#        THRESHOLD=80 \
+#        DIRECTION=high \
+#        [NAME=battery_high]
 ############################################
 
 ############################################
@@ -737,15 +737,14 @@ VARIANTS_DIR4  = executions/$(PHASE4)
 
 variant4: check-variant-format
 	@test -n "$(PARENT)"   || (echo "[ERROR] You must specify PARENT=v3XX (parent F03 variant)"; exit 1)
-	@test -n "$(NAME)"     || (echo "[ERROR] You must specify NAME=<prediction_name>"; exit 1)
-	@test -n "$(OPERATOR)" || (echo "[ERROR] You must specify OPERATOR=OR"; exit 1)
-	@test -n "$(EVENTS)"   || (echo "[ERROR] You must specify EVENTS=[\"event_type\", ...]"; exit 1)
+	@test -n "$(THRESHOLD)" || (echo "[ERROR] You must specify THRESHOLD=<0..100>"; exit 1)
+	@test -n "$(DIRECTION)" || (echo "[ERROR] You must specify DIRECTION=high|low"; exit 1)
 
 	@$(eval EXTRA_FLAGS := )
 	@$(eval EXTRA_FLAGS += PARENT=$(PARENT))
-	@$(eval EXTRA_FLAGS += prediction_name=$(NAME))
-	@$(eval EXTRA_FLAGS += target_operator=$(OPERATOR))
-	@$(eval EXTRA_FLAGS += target_event_types=$(EVENTS))
+	@$(eval EXTRA_FLAGS += threshold=$(THRESHOLD))
+	@$(eval EXTRA_FLAGS += direction=$(DIRECTION))
+	@$(if $(strip $(NAME)),$(eval EXTRA_FLAGS += prediction_name=$(NAME)))
 
 	@$(MAKE) variant-generic \
 		PHASE=$(PHASE4) \
@@ -806,9 +805,8 @@ help4:
 	@echo ""
 	@echo " Create:"
 	@echo "   make variant4 VARIANT=v401 PARENT=v301 \\"
-	@echo "       NAME=battery_overheat \\"
-	@echo "       OPERATOR=OR \\"
-	@echo "       EVENTS='[\"Battery_Active_Power_80_100-to-100_120\"]'"
+	@echo "       THRESHOLD=80 DIRECTION=high \\"
+	@echo "       NAME=battery_high"
 	@echo ""
 	@echo " Execution:"
 	@echo "   make script4 VARIANT=v401"

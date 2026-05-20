@@ -1,321 +1,352 @@
 # MLOps4RT-Edge
 
-![Python 3.11](https://img.shields.io/badge/python-3.11-blue)
-![Platforms macOS Linux Windows](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-success)
-![Repository scope code only](https://img.shields.io/badge/repository-code--only-informational)
-![Artifacts DVC backend](https://img.shields.io/badge/artifacts-DVC%20backend-orange)
+Pipeline reproducible por fases para entrenar y validar modelos de series temporales orientados a edge.
 
-MLOps4RT-Edge is a reproducible, phase-based MLOps pipeline for edge machine learning workflows, from raw time-series data to quantized models and on-device validation.
-
-It is intended for teams that need a structured and traceable path from data preparation to embedded deployment experiments, while keeping binary artifacts and execution state outside the public code repository.
-
-This README is written for users who want to run the pipeline with their own data, generate their own execution artifacts, and store those artifacts in their own project storage backends.
-
-If you want to work on the pipeline code itself, see [DEVELOPERS.md](DEVELOPERS.md).
-
-## At A Glance
-
-1. Eight-phase pipeline from exploration to edge system validation.
-2. Setup-driven project configuration for Git, DVC, and MLflow backends.
-3. Cross-platform workflow for macOS, Linux, and Windows.
-4. Public repository kept code-only by design.
-5. Intended for project workspaces that keep executions and artifacts outside this repo.
-
-## Project Status
-
-This project is intended to be published as a reusable public pipeline codebase.
-
-Current status:
-
-1. The repository is maintained as a code-only public repository.
-2. Generated executions, local DVC state, MLflow state, and project artifacts are intentionally excluded from Git.
-3. Users are expected to run the pipeline in their own project workspace and connect it to their own DVC and MLflow backends.
-
-## What This Project Does
-
-The pipeline is organized into eight phases:
-
-1. Explore raw data.
-2. Build an events dataset.
-3. Build a windows dataset.
-4. Engineer prediction targets.
-5. Train models.
-6. Quantize and package models for edge deployment.
-7. Validate a model on edge hardware.
-8. Validate a multi-model system on edge hardware.
-
-Each phase creates a variant under a local executions workspace and can be validated, registered, and removed independently.
-
-## Repository Scope
-
-This public repository is the pipeline codebase only.
-
-- It does contain: source code, setup templates, tests, documentation, and automation.
-- It does not contain: your local DVC cache, your MLflow state, your execution outputs, or your project-specific DVC references.
-
-When you run the pipeline for your own project:
-
-- Your generated outputs are written to your local workspace under executions/.
-- Large binary artifacts must go to the DVC backend configured by your project setup.
-- Your project Git repository, if used, is the repository defined in your setup, not this public code repository.
-
-## Prerequisites
-
-Minimum prerequisites:
-
-1. Python 3.11.
-2. GNU Make.
-3. Git.
-4. A working virtual environment can be created locally by the setup flow.
-
-Optional but commonly needed:
-
-1. Docker for containerized phases such as F06 and embedded build flows.
-2. A supported edge platform toolchain and hardware for F07 and F08.
-3. DVC and MLflow backends, configured through the project setup.
-
-## Platform Compatibility
-
-The pipeline is designed to be cross-platform at the project level and should be usable from macOS, Linux, and Windows.
-
-What is platform-independent:
-
-1. The phase model.
-2. The Makefile-based workflow.
-3. Setup-driven DVC and MLflow configuration.
-4. Variant creation, validation, traceability, and registration logic.
-
-What may still vary by operating system in practice:
-
-1. Serial port names, such as `/dev/ttyUSB0` on Linux-like systems and `COMx` on Windows.
-2. Serial port permissions on systems that protect device access.
-3. Docker path handling, especially on Windows shells.
-4. Vendor-specific toolchain installation details for embedded targets.
-
-These are operational differences, not pipeline design differences.
-
-## Quick Start
-
-### 1. Clone the pipeline code
+La forma normal de uso es siempre la misma:
 
 ```bash
-git clone https://github.com/STRAST-UPM/mlops4rtedge.git
-cd mlops4rtedge
+make variantN ...
+make scriptN VARIANT=vN_XXXX
+make checkN VARIANT=vN_XXXX
+make registerN VARIANT=vN_XXXX
 ```
 
-### 2. Choose a setup mode
+Cada fase crea una variante en `executions/<fase>/<variant>/` con `params.yaml`, artefactos, reportes y `outputs.yaml`.
 
-For a fully local project workspace:
+## Setup
+
+Requisitos minimos:
+
+- Python 3.11
+- GNU Make
+- Git
+
+Configuracion local:
 
 ```bash
 make setup SETUP_CFG=setup/local.yaml
 make check-setup
 ```
 
-For a project that should publish to its own remote services, start from the remote template:
-
-```bash
-cp setup/remote.yaml .mlops4ofp.remote.yaml
-# edit the file with your own Git, DVC, and MLflow endpoints
-make setup SETUP_CFG=.mlops4ofp.remote.yaml
-make check-setup
-```
-
-The local setup template uses:
-
-- local DVC storage at ./.dvc_storage
-- local MLflow tracking at file:./mlruns
-- no Git publishing from pipeline register commands
-
-## Recommended Usage Model
-
-For project work, use this repository as the pipeline engine and keep your data and executions in your own working copy or project repository.
-
-Recommended pattern:
-
-1. Clone this repository.
-2. Run setup with either local or remote configuration.
-3. Place your raw dataset in data/.
-4. Create and execute variants phase by phase.
-5. Store binary artifacts in the DVC backend configured by your project.
-6. Keep any project-specific execution history in your own project environment.
-
-## Common Commands
-
-Show the built-in help:
+Ayuda general:
 
 ```bash
 make help
 ```
 
-Set up the environment:
-
-```bash
-make setup SETUP_CFG=setup/local.yaml
-make check-setup
-```
-
-Reset the local project environment:
+Limpiar entorno local generado:
 
 ```bash
 make clean-setup
 ```
 
-Remove all variants from a phase:
+## Flujo Principal
 
-```bash
-make remove-phase-all PHASE=f05_modeling VARIANTS_DIR=executions/f05_modeling
+El flujo actual F01-F04 trabaja con una serie temporal univariable:
+
+1. F01 explora y limpia el dataset bruto.
+2. F02 selecciona una medida y genera `02_series.parquet`.
+3. F03 construye ventanas `OW_values` y `PW_values`.
+4. F04 etiqueta cada ventana usando un umbral sobre los valores de prediccion.
+
+El umbral de F04 es un porcentaje entre el minimo y el maximo de la medida exportados por F02:
+
+```text
+threshold_value = min + (threshold / 100) * (max - min)
 ```
 
-## Phase-by-Phase Example
+Con `DIRECTION=high`, la etiqueta es 1 si algun valor de `PW_values` supera el umbral.  
+Con `DIRECTION=low`, la etiqueta es 1 si algun valor de `PW_values` queda por debajo del umbral.
 
-### F01: Explore raw data
+## Ejemplo F01-F04
 
-```bash
-make variant1 VARIANT=v001 RAW=./data/raw.csv CLEANING=basic NAN_VALUES='[-999999]'
-make script1 VARIANT=v001
-make check1 VARIANT=v001
-make register1 VARIANT=v001
-```
-
-#### Limpieza profunda F01:
-```bash
-make variant1 VARIANT=v000 RAW=data/raw.csv CLEANING=basic NAN_VALUES='[-999999]' ERROR_VALUES='{"MG-LV-MSB_AC_Voltage":[0.0],"Receiving_Point_AC_Voltage":[0.0],"Island_mode_MCCB_AC_Voltage":[0.0],"Island_mode_MCCB_Frequency":[-327.679993,0.0],"MG-LV-MSB_Frequency":[-327.679993,0.0],"Outlet_Temperature":[-52.5],"Inlet_Temperature_of_Chilled_Water":[-52.5,-52.400002,-52.299999]}'
-make script1 VARIANT=v000
-make check1 VARIANT=v000
-make register1 VARIANT=v000
-```
-
-
-
-
-### F02: Build events dataset
+### F01: explorar datos
 
 ```bash
-# make variant2 VARIANT=v201 PARENT=v001 STRATEGY=levels BANDS='[0.1, 0.2, 0.3]' NAN_MODE=discard
-make variant2 VARIANT=v201 PARENT=v001 STRATEGY=transitions BANDS='[10, 90]' NAN_MODE=discard
-make script2 VARIANT=v201
-make check2 VARIANT=v201
-make register2 VARIANT=v201
+make variant1 VARIANT=v1_0000 RAW=data/raw.csv CLEANING=basic NAN_VALUES='[-999999]'
+make script1 VARIANT=v1_0000
+make check1 VARIANT=v1_0000
+make register1 VARIANT=v1_0000
 ```
 
-### F03: Build windows dataset
+Opcionales habituales: `ERROR_VALUES`, `FIRST_LINE`, `MAX_LINES`.
+
+### F02: crear serie univariable
 
 ```bash
-make variant3 VARIANT=v301 PARENT=v201 OW=600 LT=100 PW=100 STRATEGY=synchro NAN_MODE=discard
-make script3 VARIANT=v301
-make check3 VARIANT=v301
-make register3 VARIANT=v301
+make variant2 VARIANT=v2_0000 PARENT=v1_0000 MEASURE=Battery_Active_Power
+make script2 VARIANT=v2_0000
+make check2 VARIANT=v2_0000
+make register2 VARIANT=v2_0000
 ```
 
-### F04: Create prediction targets
+Salida principal:
+
+- `02_series.parquet`
+- `02_series_stats.json`
+- `02_series_report.html`
+
+### F03: crear ventanas
 
 ```bash
-make variant4 VARIANT=v401 PARENT=v301 NAME=battery_overheat OPERATOR=OR EVENTS='["Battery_Active_Power_0_10-to-90_100,Battery_Active_Power_10_90-to-90_100"]'
-make script4 VARIANT=v401
-make check4 VARIANT=v401
-make register4 VARIANT=v401
+make variant3 VARIANT=v3_0000 PARENT=v2_0000 OW=600 LT=1 PW=100 STRATEGY=synchro NAN_MODE=discard
+make script3 VARIANT=v3_0000
+make check3 VARIANT=v3_0000
+make register3 VARIANT=v3_0000
 ```
 
-### F05: Train models
+Parametros:
+
+- `OW`: longitud de la ventana de observacion, en multiplos de `Tu`
+- `LT`: lead time entre observacion y prediccion
+- `PW`: longitud de la ventana de prediccion
+- `STRATEGY`: `synchro` o `asynOW`
+- `NAN_MODE`: `keep` o `discard`
+
+Salida principal:
+
+- `03_windows.parquet`, con `OW_values` y `PW_values`
+- `03_windows_report.html`
+
+### F04: crear etiquetas
 
 ```bash
-make variant5 VARIANT=v501 PARENT=v401 MODEL_FAMILY=dense_bow IMBALANCE_STRATEGY=none
-make script5 VARIANT=v501
-make check5 VARIANT=v501
-make register5 VARIANT=v501
+make variant4 VARIANT=v4_0000 PARENT=v3_0000 THRESHOLD=80 DIRECTION=high NAME=battery_high_80
+make script4 VARIANT=v4_0000
+make check4 VARIANT=v4_0000
+make register4 VARIANT=v4_0000
 ```
 
-Common F05 overrides include batch size, epochs, learning rate, embedding size, hidden units, dropout, AutoML, and evaluation split.
+Parametros:
 
-### F06: Quantize and package for edge
+- `THRESHOLD`: porcentaje entre 0 y 100 del rango min-max de F02
+- `DIRECTION`: `high` o `low`
+- `NAME`: nombre opcional del objetivo
+
+Salida principal:
+
+- `04_targets.parquet`, con `OW_values` y `label`
+- `04_targets_report.html`
+
+## Fases Posteriores
+
+Las fases F05-F08 usan el dataset etiquetado de F04:
+
+- F05 entrena modelos.
+- F06 cuantiza y empaqueta modelos.
+- F07 valida un modelo en hardware edge.
+- F08 valida una configuracion multi-modelo.
+
+### Ejemplo F06: cuantizar y empaquetar
+
+F06 parte de una variante entrenada en F05 y genera el modelo preparado para edge, incluyendo el `.tflite`, el reporte de cuantizacion y los metadatos de despliegue.
 
 ```bash
-make variant6 VARIANT=v601 PARENT=v501 DEPLOY_TARGET=esp32 REQUIRE_INT8=true
-make script6 VARIANT=v601
-make check6 VARIANT=v601
-make register6 VARIANT=v601
+make variant6 VARIANT=v6_0000 PARENT=v5_0000 DEPLOY_TARGET=esp32 REQUIRE_INT8=true
+make script6 VARIANT=v6_0000
+make check6 VARIANT=v6_0000
+make register6 VARIANT=v6_0000
 ```
 
-F06 uses Docker for reproducible packaging in the default flow.
+Opcionales habituales:
 
-### F07: Validate a model on edge hardware
+- `DEPLOY_TARGET`: plataforma objetivo, por ejemplo `esp32`.
+- `DEPLOY_RUNTIME`: runtime de despliegue, por ejemplo `esp-tflite-micro`.
+- `DEPLOY_VERSION`: version del runtime.
+- `REQUIRE_INT8`: exige que el modelo final sea INT8.
+- `MEMORY_LIMIT`: limite de memoria objetivo en bytes.
+- `QUANTIZATION`: configuracion avanzada de cuantizacion.
+- `THRESHOLDING`: configuracion avanzada para recalibrar el umbral.
+
+Salida principal:
+
+- `06_model_float.h5`
+- `06_model_tflite.tflite`
+- `06_calibration_dataset.parquet`
+- `06_quant_report.html`
+- `eedu/eedu_manifest.yaml`
+
+Consulta la ayuda especifica cuando las uses:
 
 ```bash
-# make variant7 VARIANT=v701 PARENT=v601 PLATFORM=esp32 MTI_MS=100000
-make variant7 VARIANT=v701 PARENT=v601 PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01
-make script7 VARIANT=v701
-make check7 VARIANT=v701
-make register7 VARIANT=v701
+make help5
+make help6
+make help7
+make help8
 ```
 
-You can also run F07 step by step:
+## Comandos Utiles
+
+Eliminar una variante, si no tiene hijas:
 
 ```bash
-make script7-prepare-build VARIANT=v701
-make script7-flash-run VARIANT=v701
-make script7-post VARIANT=v701
+make remove4 VARIANT=v4_0000
 ```
 
-### F08: Validate a multi-model edge system
+Eliminar todas las variantes de una fase de forma segura:
 
 ```bash
-make variant8 VARIANT=v801 PARENTS=v702,v703 PLATFORM=esp32 MTI_MS=100
-make script8 VARIANT=v801
-make check8 VARIANT=v801
-make register8 VARIANT=v801
+make remove-phase-all PHASE=f04_targets VARIANTS_DIR=executions/f04_targets
 ```
 
-F08 also supports manual and ILP-based selection modes.
-
-## Where Outputs Go
-
-During execution, the pipeline writes generated files to your local workspace under executions/.
-
-Examples of generated content:
-
-1. params.yaml and outputs.yaml for each variant.
-2. Reports, catalogs, metrics, and calibration datasets.
-3. Model binaries and quantized artifacts.
-4. Edge build outputs and runtime logs for hardware phases.
-
-These files are local project outputs and are intentionally not versioned in this public repository.
-
-## DVC, MLflow, and Git Responsibilities
-
-The intended split is:
-
-1. Git in this public repository stores the reusable pipeline code only.
-2. DVC stores large binary artifacts generated by your project.
-3. MLflow stores experiment tracking data for your project.
-4. If your project uses its own Git repository, that repository is configured through your setup file.
-
-## Troubleshooting
-
-### Setup validation fails
-
-Run:
+Regenerar el panel de linaje:
 
 ```bash
-make check-setup
+make generate_lineage
 ```
 
-Then inspect your setup file, Python version, DVC backend, and MLflow endpoint.
+## Donde se Guardan los Resultados
 
-### A phase fails after a parent changes
+Los resultados se escriben en `executions/`. Este directorio contiene variantes, artefactos, reportes y metadatos generados por ejecucion.
 
-The pipeline tracks parent-child relationships across variants. Re-run the affected phase after fixing the parent or create a new variant that references the updated parent.
+Los artefactos grandes se registran mediante DVC cuando ejecutas `make registerN`. La configuracion de DVC, MLflow y Git se define durante `make setup`.
 
-### Edge execution fails on serial or flash steps
+## Notas
 
-Check:
+- Usa variantes canonicas como `v1_0000`, `v2_0000`, etc.
+- Las formas cortas como `VARIANT=0` tambien se normalizan segun la fase.
+- F02 ya no genera catalogos de eventos.
+- F03 y F04 ya no usan `OW_events`, `PW_events` ni reglas OR sobre eventos.
 
-1. That the target board is connected.
-2. That the serial port is correct.
-3. That your user has permission to access the port.
-4. That Docker and board toolchains are installed if the selected phase requires them.
+## Cambios Realizados Desde el Inicio del Repositorio Git
 
-## Additional References
+Esta lista resume los cambios hechos respecto al commit inicial del repositorio. El cambio mas importante es que el flujo principal ha pasado de trabajar con eventos discretos a trabajar con una serie temporal numerica de una sola medida.
 
-1. [DEVELOPERS.md](DEVELOPERS.md) for contributors and maintainers.
-2. [setup/local.yaml](setup/local.yaml) and [setup/remote.yaml](setup/remote.yaml) as setup templates.
+### F01: exploracion y limpieza
+
+No se han hecho cambios directos en el script de F01.
+
+F01 sigue siendo la fase que lee el dataset bruto, prepara el eje temporal, limpia valores invalidos y exporta las columnas de medida disponibles. Lo que si ha cambiado es que ahora F02 usa de forma mas directa la informacion que F01 exporta: la lista de medidas sirve para validar que la medida elegida en F02 existe realmente en el dataset limpio.
+
+### F02: de dataset de eventos a serie temporal univariable
+
+Este es uno de los cambios principales.
+
+Antes F02 generaba un dataset de eventos. Para ello discretizaba varias medidas en bandas, creaba un catalogo de eventos y producia artefactos como `02_events.parquet` y `02_events_catalog.json`.
+
+Ahora F02 selecciona una sola medida con el parametro `MEASURE` y genera una serie temporal numerica simple:
+
+- `02_series.parquet`
+- `02_series_stats.json`
+- `02_series_report.html`
+
+El dataset resultante contiene la columna temporal y una columna `value`. Esto simplifica mucho el flujo, porque las fases siguientes ya no dependen de codigos de eventos ni de catalogos. Tambien se calculan estadisticas utiles de la serie, como minimo, maximo, media, mediana, desviacion, proporcion de NaN y continuidad temporal.
+
+Tambien se ha cambiado el `Makefile`: ahora `variant2` pide `MEASURE` en lugar de `STRATEGY`, `BANDS` y `NAN_MODE`. Ademas, se valida que la medida exista entre las columnas exportadas por F01.
+
+### F03: ventanas sobre valores numericos
+
+F03 se ha adaptado al nuevo formato de F02.
+
+Antes construia ventanas con listas de eventos:
+
+- `OW_events`
+- `PW_events`
+
+Ahora construye ventanas con valores numericos:
+
+- `OW_values`
+- `PW_values`
+
+La logica de ventanas se mantiene en lo esencial: se siguen usando `OW`, `LT`, `PW`, `STRATEGY` y `NAN_MODE`. La diferencia es que las ventanas ya no contienen IDs de eventos, sino valores reales de la medida seleccionada en F02.
+
+Tambien se ha eliminado la copia del catalogo de eventos en F03, porque ya no existe un catalogo. El chequeo de fase se ha actualizado para no exigir `03_events_catalog.json`.
+
+### F04: etiquetas por umbral numerico
+
+F04 tambien ha cambiado de forma importante.
+
+Antes F04 etiquetaba una ventana buscando si en `PW_events` aparecia alguno de los eventos definidos en `target_event_types`, normalmente usando una regla OR.
+
+Ahora F04 etiqueta cada ventana mirando los valores de `PW_values`. El usuario define:
+
+- `THRESHOLD`: porcentaje entre 0 y 100.
+- `DIRECTION`: `high` o `low`.
+- `NAME`: nombre opcional del objetivo.
+
+El porcentaje se convierte en un valor real usando el minimo y maximo calculados en F02:
+
+```text
+threshold_value = min + (threshold / 100) * (max - min)
+```
+
+Con `DIRECTION=high`, la etiqueta vale 1 si algun valor de la ventana de prediccion supera el umbral. Con `DIRECTION=low`, vale 1 si algun valor queda por debajo.
+
+Tambien se ha hecho el etiquetado por lotes con PyArrow. Esto evita cargar todo el parquet completo en memoria cuando el dataset es grande. La salida principal sigue siendo `04_targets.parquet`, pero ahora contiene `OW_values` y `label`.
+
+### F05: entrenamiento con secuencias numericas
+
+F05 se ha adaptado para entrenar modelos usando `OW_values`.
+
+Antes el entrenamiento trabajaba con secuencias de eventos o bolsas de eventos. Eso necesitaba cosas como `event_type_count`, vocabularios de eventos y modelos pensados para IDs categoricos.
+
+Ahora el entrenamiento trabaja con secuencias numericas continuas. Cada muestra que llega desde F04 tiene:
+
+- `OW_values`: los valores reales de la ventana de observacion.
+- `label`: la etiqueta calculada en F04.
+
+Antes, para `cnn1d`, el flujo era este:
+
+```text
+OW_events -> IDs de eventos -> Embedding -> Conv1D -> salida
+```
+
+Es decir, la red no veia la senal original. Veia codigos enteros de eventos. Por eso necesitaba una capa `Embedding`, un vocabulario de eventos y `event_type_count`.
+
+Ahora, para `cnn1d`, el flujo es este:
+
+```text
+OW_values -> secuencia numerica normalizada -> Conv1D -> salida
+```
+
+La red recibe directamente la forma de la serie temporal. Por ejemplo, si la medida elegida en F02 es `Battery_Active_Power`, la CNN trabaja con la evolucion numerica de esa potencia dentro de la ventana de observacion.
+
+El preprocesado nuevo de F05 hace estos pasos:
+
+1. Lee solo `OW_values` y `label` del parquet de F04.
+2. Convierte cada `OW_values` en una secuencia de numeros `float32`.
+3. Calcula una longitud comun `max_len` usando el percentil 95 de las longitudes.
+4. Rellena con ceros o recorta las secuencias para que todas tengan esa longitud.
+5. Normaliza los valores con media y desviacion tipica. (el modelo aprende mejor si la entrada tiene una escala estable y los valores que podemos tener son muy dispersos (-216.8, 0.4, 15.2, 119.9, ...) (valor_normalizado = (valor - media) / desviacion_tipica))
+6. Si el modelo es `cnn1d`, convierte la entrada a forma `[muestras, max_len, 1]`.
+
+Ese ultimo `1` significa que hay un solo canal de entrada, porque el flujo actual usa una serie univariable. Es el formato que espera una `Conv1D` para aprender patrones locales en una senal temporal.
+
+El modelo `cnn1d` tambien se ha simplificado. Antes empezaba con una capa `Embedding`; ahora empieza directamente con una entrada numerica:
+
+```text
+Input(max_len, 1) -> Conv1D -> GlobalMaxPooling1D -> Dense -> Dense(1)
+```
+
+La salida final sigue siendo una probabilidad binaria, con activacion `sigmoid`, para predecir si la ventana pertenece o no al objetivo definido en F04.
+
+
+Tambien se ha ajustado la carga del dataset para el caso de clases desbalanceadas. En la estrategia `rare_events`, F05 puede leer etiquetas, seleccionar positivos y una muestra limitada de negativos, y despues cargar solo esas filas. Esto reduce memoria y tiempo cuando hay muchos negativos.
+
+### F06: cuantizacion y empaquetado desde entrada numerica
+
+F06 se ha cambiado para calibrar y cuantizar modelos que reciben `OW_values`.
+
+Antes la calibracion dependia de eventos y de `event_type_count`. Tambien habia comprobaciones sobre si el numero de tipos de evento cabia en ciertos rangos.
+
+Ahora F06 reconstruye la entrada numerica esperada por el modelo, aplica padding o recorte, normaliza la secuencia y genera los datos de calibracion para TFLite. En los metadatos se guardan campos como:
+
+- `input_sequence_column`
+- `input_max_len`
+- `normalization_mean`
+- `normalization_std`
+
+Esto hace que el empaquetado edge siga teniendo trazabilidad sobre como se preparo la entrada del modelo.
+
+
+### Cambios transversales de soporte
+
+Tambien se han actualizado piezas comunes para que el nuevo flujo sea coherente:
+
+- `Makefile`: comandos de F02 y F04 cambiados para usar `MEASURE`, `THRESHOLD` y `DIRECTION`.
+- `makefile_check_phases.yml`: los chequeos ahora esperan los nuevos artefactos de F02 y ya no exigen catalogos de eventos.
+- `scripts/traceability_schema.yaml`: el esquema de trazabilidad se ha adaptado a `series`, `OW_values`, `PW_values`, umbrales numericos y modelos sin `event_type_count`.
+- `scripts/core/params_manager.py`: se ha anadido validacion para evitar elegir una medida que no existe en el parent.
+- `scripts/core/artifacts.py`: se ha anadido una comprobacion defensiva relacionada con medidas exportadas.
+
+En resumen, el repositorio ahora tiene un flujo mas simple y directo para series temporales: F01 limpia, F02 elige una medida, F03 crea ventanas numericas, F04 etiqueta por umbral, F05 entrena, F06 cuantiza y F07-F08 validan en edge.

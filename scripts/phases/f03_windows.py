@@ -7,7 +7,6 @@ from pathlib import Path
 from bisect import bisect_left
 
 import numpy as np
-import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import hashlib
@@ -17,8 +16,6 @@ from scripts.core.artifacts import (
     save_outputs_yaml,
     load_params,
     get_variant_dir,
-    save_json,
-    load_json,
 )
 from scripts.core.phase_io import load_phase_outputs, resolve_artifact_path
 from scripts.core.traceability import validate_outputs
@@ -46,18 +43,15 @@ def flush_rows(writer, rows, schema):
         rows.clear()
 
 
-def range_event_count(offsets, i0, i1):
-    return int(offsets[i1] - offsets[i0])
-
 def stable_array_hash(arr):
     if len(arr) == 0:
         return "EMPTY"
-    a = np.asarray(arr, dtype=np.int32)
+    a = np.asarray(arr, dtype=np.float64)
     return hashlib.md5(a.tobytes()).hexdigest()
 
 
 def register_window(rows, ow, pw, ow_lengths, pw_lengths, ow_hashes, pw_hashes):
-    rows.append({"OW_events": ow, "PW_events": pw})
+    rows.append({"OW_values": ow, "PW_values": pw})
     ow_lengths.append(len(ow))
     pw_lengths.append(len(pw))
     ow_hashes.add(stable_array_hash(ow))
@@ -97,20 +91,15 @@ def main():
         "F03",
     )
 
-    parent_dataset_path = resolve_artifact_path(
+    parent_series_path = resolve_artifact_path(
         parent_dir,
         parent_outputs,
-        ["events"],
-        "F03",
-    )
-    parent_catalog_path = resolve_artifact_path(
-        parent_dir,
-        parent_outputs,
-        ["catalog"],
+        ["series"],
         "F03",
     )
 
-    df = pq.read_table(parent_dataset_path, memory_map=True).to_pandas()
+
+    df = pq.read_table(parent_series_path, memory_map=True).to_pandas()
 
     # --------------------------------------------------------
     # Parámetros
@@ -131,58 +120,25 @@ def main():
     if "segs" not in df.columns:
         raise RuntimeError("El dataset padre no contiene columna 'segs'")
 
-    if "events" not in df.columns:
-        raise RuntimeError("El dataset padre no contiene columna 'events'")
+    if "value" not in df.columns:
+        raise RuntimeError("El dataset padre no contiene columna 'value'")
 
     df = df.sort_values("segs", kind="mergesort").reset_index(drop=True)
-
-    # --------------------------------------------------------
-    # Snapshot catálogo
-    # --------------------------------------------------------
-
-    catalog = load_json(parent_catalog_path)
-
-    event_type_count = int(len(catalog))
-
-    catalog_path = variant_dir / "03_events_catalog.json"
-    save_json(catalog_path, catalog)
+    if df.empty:
+        raise RuntimeError("El dataset padre de series está vacío")
 
     # --------------------------------------------------------
     # Preparar arrays
     # --------------------------------------------------------
 
     times = df["segs"].to_numpy(dtype=np.int64)
-    events = df["events"].to_numpy()
-
-    lengths = np.fromiter((len(e) for e in events), dtype=np.int64)
-    offsets = np.empty(len(events) + 1, dtype=np.int64)
-    offsets[0] = 0
-    np.cumsum(lengths, out=offsets[1:])
-
-    total_events = int(offsets[-1])
-    events_flat = np.empty(total_events, dtype=np.int32)
-
-    has_nan = None
-    nan_prefix = None
-
-    if nan_mode == "discard":
-        nan_codes = {v for k, v in catalog.items() if k.endswith("_NaN_NaN")}
-        has_nan = np.zeros(len(events), dtype=bool)
-
-    pos = 0
-    for i, evs in enumerate(events):
-        l = len(evs)
-        if l:
-            events_flat[pos:pos + l] = evs
-            if nan_mode == "discard":
-                for ev in evs:
-                    if ev in nan_codes:
-                        has_nan[i] = True
-                        break
-            pos += l
+    values = df["value"].to_numpy(dtype=np.float64)
+    has_nan = np.isnan(values)
 
     if nan_mode == "discard":
         nan_prefix = np.cumsum(has_nan, dtype=np.int64)
+    else:
+        nan_prefix = None
 
     # --------------------------------------------------------
     # Geometría temporal
@@ -200,8 +156,8 @@ def main():
     output_path = variant_dir / "03_windows.parquet"
 
     schema = pa.schema([
-        ("OW_events", pa.list_(pa.int32())),
-        ("PW_events", pa.list_(pa.int32())),
+        ("OW_values", pa.list_(pa.float64())),
+        ("PW_values", pa.list_(pa.float64())),
     ])
 
     writer = pq.ParquetWriter(output_path, schema, compression="snappy")
@@ -240,14 +196,14 @@ def main():
                     ):
                         pass
                     else:
-                        ow = events_flat[offsets[i_ow_0]:offsets[i_ow_1]]
-                        pw = events_flat[offsets[i_pw_0]:offsets[i_pw_1]]
+                        ow = values[i_ow_0:i_ow_1]
+                        pw = values[i_pw_0:i_pw_1]
                         if len(ow) or len(pw):
                             register_window(rows, ow, pw, ow_lengths, pw_lengths, ow_hashes, pw_hashes)
                             windows_written += 1
                 else:
-                    ow = events_flat[offsets[i_ow_0]:offsets[i_ow_1]]
-                    pw = events_flat[offsets[i_pw_0]:offsets[i_pw_1]]
+                    ow = values[i_ow_0:i_ow_1]
+                    pw = values[i_pw_0:i_pw_1]
                     if len(ow) or len(pw):
                         register_window(rows, ow, pw, ow_lengths, pw_lengths, ow_hashes, pw_hashes)
                         windows_written += 1
@@ -275,7 +231,8 @@ def main():
     # ASYNOW
     # =================================================================
     elif window_strategy == "asynOW":
-        active_bins = np.unique(((times[lengths > 0] - times[0]) // Tu).astype(np.int64))
+        active_mask = ~has_nan if nan_mode == "discard" else np.ones(len(times), dtype=bool)
+        active_bins = np.unique(((times[active_mask] - times[0]) // Tu).astype(np.int64))
 
         for b in active_bins:
             t0 = times[0] + b * Tu
@@ -299,8 +256,8 @@ def main():
                 ):
                     continue
 
-            ow = events_flat[offsets[i_ow_0]:offsets[i_ow_1]]
-            pw = events_flat[offsets[i_pw_0]:offsets[i_pw_1]]
+            ow = values[i_ow_0:i_ow_1]
+            pw = values[i_pw_0:i_pw_1]
             if len(ow) or len(pw):
                 register_window(rows, ow, pw, ow_lengths, pw_lengths, ow_hashes, pw_hashes)
                 windows_written += 1
@@ -365,10 +322,6 @@ def main():
                 "path": output_path.name,
                 "sha256": sha256_of_file(output_path),
             },
-            "catalog": {
-                "path": catalog_path.name,
-                "sha256": sha256_of_file(catalog_path),
-            },
             "report": {
                 "path": report_path.name,
                 "sha256": sha256_of_file(report_path),
@@ -380,7 +333,6 @@ def main():
             "LT": LT,
             "PW": PW,
             "Ratio_PW_OW": PW / OW if OW > 0 else None,
-            "event_type_count": event_type_count,
             "window_strategy": window_strategy,
             "nan_mode": nan_mode,
             "parent_f02": parent_variant,
@@ -396,7 +348,7 @@ def main():
         },
         "metrics": {
             "execution_time": float(elapsed),
-            "n_events_in": int(len(df)),
+            "n_rows_in": int(len(df)),
             "n_windows_out": int(windows_written),
         },
         "provenance": {

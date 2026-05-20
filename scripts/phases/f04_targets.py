@@ -3,13 +3,10 @@
 import argparse
 import hashlib
 import time
-import re
-from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -18,7 +15,6 @@ from scripts.core.artifacts import (
     save_outputs_yaml,
     load_params,
     get_variant_dir,
-    load_json,
 )
 from scripts.core.phase_io import load_phase_outputs, resolve_artifact_path
 from scripts.core.traceability import validate_outputs
@@ -33,16 +29,142 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # ============================================================
 # Helper functions
 # ============================================================
-def extract_measure_name(prediction_name: str) -> str:
-    suffix = "_any-to-"
-    if suffix in prediction_name:
-        return prediction_name.split(suffix, 1)[0]
-    return prediction_name
+def _combine_chunks(array):
+    if isinstance(array, pa.ChunkedArray):
+        return array.combine_chunks()
+    return array
+
+
+def _list_offsets_and_values(list_array):
+    list_array = _combine_chunks(list_array)
+    offsets = list_array.offsets.to_numpy(zero_copy_only=False)
+    values = list_array.values.to_numpy(zero_copy_only=False)
+    return offsets, values
+
+
+def label_prediction_batch(pw_array, threshold_value: float, direction: str) -> np.ndarray:
+    offsets, values = _list_offsets_and_values(pw_array)
+    n_rows = len(offsets) - 1
+    labels = np.zeros(n_rows, dtype=np.int8)
+
+    if values.size == 0 or n_rows == 0:
+        return labels
+
+    if direction == "high":
+        matches = values > threshold_value
+    elif direction == "low":
+        matches = values < threshold_value
+    else:
+        raise ValueError(f"Direccion desconocida: {direction}")
+
+    lengths = np.diff(offsets)
+    non_empty = lengths > 0
+    if np.any(non_empty):
+        starts = offsets[:-1][non_empty]
+        labels[non_empty] = np.maximum.reduceat(matches, starts).astype(np.int8)
+
+    return labels
+
+
+class OWDedupStats:
+    def __init__(self):
+        self._counts_by_hash = {}
+        self.total = 0
+
+    @staticmethod
+    def _hash_values(values: np.ndarray, start: int, end: int) -> bytes:
+        if start == end:
+            return b"EMPTY"
+        return hashlib.md5(values[start:end].view(np.uint8)).digest()
+
+    def update(self, ow_array, labels: np.ndarray):
+        offsets, values = _list_offsets_and_values(ow_array)
+
+        for row_idx, label in enumerate(labels):
+            digest = self._hash_values(values, int(offsets[row_idx]), int(offsets[row_idx + 1]))
+            count, positives = self._counts_by_hash.get(digest, (0, 0))
+            self._counts_by_hash[digest] = (count + 1, positives + int(label))
+            self.total += 1
+
+    def to_dict(self):
+        unique_ow = len(self._counts_by_hash)
+        num_duplicate_sequences = 0
+        ambiguous_sequences = 0
+        ambiguous_samples = 0
+        consistency_sum = 0.0
+
+        for count, positives in self._counts_by_hash.values():
+            if count > 1:
+                num_duplicate_sequences += count - 1
+            if 0 < positives < count:
+                ambiguous_sequences += 1
+                ambiguous_samples += count
+            consistency_sum += max(positives, count - positives) / count
+
+        total = self.total
+        return {
+            "total_sequences": int(total),
+            "unique_ow_sequences": int(unique_ow),
+            "num_duplicate_sequences": int(num_duplicate_sequences),
+            "duplicate_ratio": float(num_duplicate_sequences / total if total else 0.0),
+            "ambiguous_sequences": int(ambiguous_sequences),
+            "ambiguous_samples": int(ambiguous_samples),
+            "ambiguous_ratio": float(ambiguous_samples / total if total else 0.0),
+            "avg_label_consistency_per_ow": float(
+                consistency_sum / unique_ow if unique_ow else 0.0
+            ),
+        }
+
+
+def require_float(value, name: str) -> float:
+    if value is None:
+        raise RuntimeError(f"Falta valor requerido: {name}")
+    return float(value)
+
+
+def require_bool(value, name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "y", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "off"}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    raise ValueError(f"{name} debe ser booleano")
+
+
+def dedup_stats_from_parent(parent_exports: dict, total: int) -> dict:
+    unique_ow = parent_exports.get("n_unique_ow_hash")
+    if unique_ow is None:
+        dup_ratio = parent_exports.get("dup_ratio_ow")
+        if dup_ratio is not None and total:
+            unique_ow = round(total * (1.0 - float(dup_ratio)))
+        else:
+            unique_ow = total
+
+    unique_ow = int(unique_ow)
+    num_duplicate_sequences = max(total - unique_ow, 0)
+    duplicate_ratio = num_duplicate_sequences / total if total else 0.0
+
+    return {
+        "total_sequences": int(total),
+        "unique_ow_sequences": int(unique_ow),
+        "num_duplicate_sequences": int(num_duplicate_sequences),
+        "duplicate_ratio": float(duplicate_ratio),
+        "ambiguous_sequences": None,
+        "ambiguous_samples": None,
+        "ambiguous_ratio": None,
+        "avg_label_consistency_per_ow": None,
+        "source": "parent_f03",
+    }
+
 
 # ============================================================
 # MAIN
 # ============================================================
-
 def main():
 
     parser = argparse.ArgumentParser()
@@ -80,144 +202,135 @@ def main():
         "F04",
     )
 
-    parent_catalog_path = resolve_artifact_path(
-        parent_dir,
-        parent_outputs,
-        ["catalog"],
-        "F04",
-    )
-
     if not parent_dataset_path.exists():
         raise RuntimeError("No existe dataset de ventanas F03")
 
-    if not parent_catalog_path.exists():
-        raise RuntimeError("No existe catálogo de eventos F03")
+    parent_parquet = pq.ParquetFile(parent_dataset_path, memory_map=True)
+    parent_columns = set(parent_parquet.schema_arrow.names)
 
-    df = pq.read_table(parent_dataset_path, memory_map=True).to_pandas()
-
-    if "OW_events" not in df.columns or "PW_events" not in df.columns:
+    if "OW_values" not in parent_columns or "PW_values" not in parent_columns:
         raise RuntimeError(
-            "El dataset F03 debe contener columnas OW_events y PW_events"
+            "El dataset F03 debe contener columnas OW_values y PW_values"
+        )
+
+    # --------------------------------------------------------
+    # Resolver F02 para min/max de la medida
+    # --------------------------------------------------------
+
+    parent_exports = parent_outputs.get("exports", {})
+    parent_f02 = parent_exports.get("parent_f02")
+    if not parent_f02:
+        raise RuntimeError("F03 no exporta parent_f02; no se puede resolver F02")
+
+    f02_outputs, _ = load_phase_outputs(
+        PROJECT_ROOT,
+        "f02_events",
+        parent_f02,
+        "F04",
+    )
+
+    f02_exports = f02_outputs.get("exports", {})
+    f02_metrics = f02_outputs.get("metrics", {})
+
+    measure_name = f02_exports.get("measure_name")
+    value_col = f02_exports.get("value_col", "value")
+    min_value = require_float(f02_metrics.get("min"), "F02 metrics.min")
+    max_value = require_float(f02_metrics.get("max"), "F02 metrics.max")
+
+    if measure_name is None:
+        raise RuntimeError("F02 no exporta measure_name")
+    if max_value < min_value:
+        raise RuntimeError(
+            f"Rango inválido en F02: min={min_value}, max={max_value}"
         )
 
     # --------------------------------------------------------
     # Parámetros de objetivo
     # --------------------------------------------------------
 
-    prediction_name = params["prediction_name"]
-    target_operator = params["target_operator"]
-    target_event_types_raw = params["target_event_types"]
+    threshold_percentage = float(params["threshold"])
+    direction = str(params["direction"]).strip().lower()
 
-    def normalize_target_event_types(raw_value):
-        if isinstance(raw_value, str):
-            raw_items = [raw_value]
-        elif isinstance(raw_value, list):
-            raw_items = raw_value
-        else:
-            raise ValueError("target_event_types debe ser string o list")
+    if not 0.0 <= threshold_percentage <= 100.0:
+        raise ValueError("threshold debe estar en el rango [0, 100]")
+    if direction not in {"high", "low"}:
+        raise ValueError("direction debe ser 'high' o 'low'")
 
-        normalized = []
+    threshold_value = min_value + (threshold_percentage / 100.0) * (max_value - min_value)
 
-        for item in raw_items:
-            if not isinstance(item, str):
-                raise ValueError("Cada item de target_event_types debe ser string")
-
-            value = item.strip()
-            if not value:
-                continue
-
-            if any(sep in value for sep in [",", ";"]) or re.search(r"\s+", value):
-                parts = re.split(r"[\s,;]+", value)
-                normalized.extend(part for part in parts if part)
-            else:
-                normalized.append(value)
-
-        return normalized
-
-    target_event_types = normalize_target_event_types(target_event_types_raw)
-    measure_name = extract_measure_name(prediction_name)
-    target_event_count = len(target_event_types)
-
-    if target_operator != "OR":
-        raise NotImplementedError(
-            f"Operador no soportado: {target_operator}"
-        )
+    prediction_name = params.get(
+        "prediction_name",
+        f"{measure_name}_{direction}_{threshold_percentage:g}pct",
+    )
 
     print("[INFO] Objetivo de predicción:")
-    print(f"  prediction_name = {prediction_name}")
-    print(f"  operator        = {target_operator}")
-    print(f"  event_types     = {target_event_types}")
-
-    # --------------------------------------------------------
-    # Cargar catálogo (name -> code)
-    # --------------------------------------------------------
-
-    catalog = load_json(parent_catalog_path)
-    event_type_count = int(len(catalog))
-
-    name_to_code = {
-        name: int(code)
-        for name, code in catalog.items()
-    }
-
-    target_event_codes = []
-
-    for name in target_event_types:
-        if name not in name_to_code:
-            raise ValueError(
-                f"Evento '{name}' no existe en catálogo"
-            )
-        target_event_codes.append(name_to_code[name])
-
-    target_event_codes = set(target_event_codes)
-
-    print("[INFO] Códigos objetivo:", sorted(target_event_codes))
+    print(f"  measure_name          = {measure_name}")
+    print(f"  direction             = {direction}")
+    print(f"  threshold_percentage  = {threshold_percentage}")
+    print(f"  threshold_value       = {threshold_value}")
 
     # --------------------------------------------------------
     # Etiquetado
     # --------------------------------------------------------
 
-    def label_window(pw_events):
-        return int(any(ev in target_event_codes for ev in pw_events))
+    output_path = variant_dir / "04_targets.parquet"
 
-    df["label"] = df["PW_events"].apply(label_window)
+    schema = pa.schema([
+        ("OW_values", pa.list_(pa.float64())),
+        ("label", pa.int8()),
+    ])
 
-    df_out = df[["OW_events", "label"]].copy()
+    batch_size = int(params.get("batch_size", 50_000))
+    if batch_size <= 0:
+        raise ValueError("batch_size debe ser mayor que 0")
+    compute_dedup_stats = require_bool(params.get("compute_dedup_stats", False), "compute_dedup_stats")
+
+    total = 0
+    positives = 0
+    dedup = OWDedupStats() if compute_dedup_stats else None
+
+    writer = pq.ParquetWriter(output_path, schema, compression="snappy")
+    try:
+        for batch in parent_parquet.iter_batches(
+            batch_size=batch_size,
+            columns=["OW_values", "PW_values"],
+        ):
+            ow_array = batch.column(batch.schema.get_field_index("OW_values"))
+            pw_array = batch.column(batch.schema.get_field_index("PW_values"))
+            labels = label_prediction_batch(pw_array, threshold_value, direction)
+
+            total += len(labels)
+            positives += int(labels.sum())
+            if dedup is not None:
+                dedup.update(ow_array, labels)
+
+            table_out = pa.Table.from_arrays(
+                [ow_array, pa.array(labels, type=pa.int8())],
+                schema=schema,
+            )
+            writer.write_table(table_out)
+    finally:
+        writer.close()
 
     # --------------------------------------------------------
     # Estadísticas
     # --------------------------------------------------------
 
-    total = len(df_out)
-    positives = int(df_out["label"].sum())
     negatives = total - positives
-    ratio = positives / total if total else 0.0
+    positive_ratio = positives / total if total else 0.0
+    negative_ratio = negatives / total if total else 0.0
+    if dedup is not None:
+        dedup_stats = dedup.to_dict()
+        dedup_stats["source"] = "f04_streaming_hash"
+    else:
+        dedup_stats = dedup_stats_from_parent(parent_exports, total)
 
     elapsed = time.perf_counter() - start_time
 
     print(f"[INFO] Total ventanas: {total}")
     print(f"[INFO] Positivas: {positives}")
     print(f"[INFO] Negativas: {negatives}")
-    print(f"[INFO] Positive ratio: {ratio:.6f}")
-
-    # --------------------------------------------------------
-    # Guardar dataset
-    # --------------------------------------------------------
-
-    output_path = variant_dir / "04_targets.parquet"
-
-    schema = pa.schema([
-        ("OW_events", pa.list_(pa.int32())),
-        ("label", pa.int8()),
-    ])
-
-    table_out = pa.Table.from_pandas(
-        df_out,
-        schema=schema,
-        preserve_index=False,
-    )
-
-    pq.write_table(table_out, output_path, compression="snappy")
+    print(f"[INFO] Positive ratio: {positive_ratio:.6f}")
 
     # --------------------------------------------------------
     # Report
@@ -229,99 +342,31 @@ def main():
         <html>
         <body>
         <h1>F04 Targets — {variant}</h1>
-        <p>Parent: {parent_variant}</p>
+        <p>Parent F03: {parent_variant}</p>
+        <p>Parent F02: {parent_f02}</p>
         <p>Prediction name: {prediction_name}</p>
-        <p>Operator: {target_operator}</p>
-        <p>Event types: {target_event_types}</p>
+        <p>Measure: {measure_name}</p>
+        <p>Value column: {value_col}</p>
+        <p>Direction: {direction}</p>
+        <p>Threshold percentage: {threshold_percentage:.6f}</p>
+        <p>Threshold value: {threshold_value:.12g}</p>
+        <p>Min value: {min_value:.12g}</p>
+        <p>Max value: {max_value:.12g}</p>
         <p>Total windows: {total}</p>
         <p>Positives: {positives}</p>
         <p>Negatives: {negatives}</p>
-        <p>Positive ratio: {ratio:.6f}</p>
+        <p>Positive ratio: {positive_ratio:.6f}</p>
+        <p>Negative ratio: {negative_ratio:.6f}</p>
         </body>
         </html>
-        """
+        """,
+        encoding="utf-8",
     )
 
     # --------------------------------------------------------
     # outputs.yaml
     # --------------------------------------------------------
 
-
-    def analyze_ow_duplicates(ow_events_list, labels):
-        """
-        Analiza duplicados basados SOLO en OW (ignorando label)
-        """
-
-        total = len(ow_events_list)
-
-        # --------------------------------------------------------
-        # Agrupar por OW
-        # --------------------------------------------------------
-
-        groups = defaultdict(list)
-
-        for ow, label in zip(ow_events_list, labels):
-            key = tuple(ow)
-            groups[key].append(label)
-
-        unique_ow = len(groups)
-
-        # --------------------------------------------------------
-        # Duplicados estructurales
-        # --------------------------------------------------------
-
-        num_duplicate_sequences = sum(len(v) - 1 for v in groups.values() if len(v) > 1)
-        duplicate_ratio = num_duplicate_sequences / total if total else 0.0
-
-        # --------------------------------------------------------
-        # Ambigüedad de labels (CRÍTICO)
-        # --------------------------------------------------------
-
-        ambiguous_sequences = 0
-        ambiguous_samples = 0
-
-        for labels_list in groups.values():
-            if len(set(labels_list)) > 1:
-                ambiguous_sequences += 1
-                ambiguous_samples += len(labels_list)
-
-        ambiguous_ratio = ambiguous_samples / total if total else 0.0
-
-        # --------------------------------------------------------
-        # Dominancia de clase por OW
-        # --------------------------------------------------------
-
-        majority_consistency = []
-
-        for labels_list in groups.values():
-            count = Counter(labels_list)
-            majority = max(count.values())
-            consistency = majority / len(labels_list)
-            majority_consistency.append(consistency)
-
-        avg_consistency = sum(majority_consistency) / len(majority_consistency)
-
-        return {
-            "total_sequences": total,
-            "unique_ow_sequences": unique_ow,
-            "num_duplicate_sequences": num_duplicate_sequences,
-            "duplicate_ratio": duplicate_ratio,
-
- 
-            "ambiguous_sequences": ambiguous_sequences,
-            "ambiguous_samples": ambiguous_samples,
-            "ambiguous_ratio": ambiguous_ratio,
-
-            # calidad del dataset
-            "avg_label_consistency_per_ow": avg_consistency,
-        }
-    
-    dedup_stats = analyze_ow_duplicates(df_out["OW_events"], df_out["label"])
-
-
-    parent_exports = parent_outputs.get("exports", {})
-
-    parent_f02 = parent_exports.get("parent_f02")
     window_strategy = parent_exports.get("window_strategy")
     dup_ratio_ow = parent_exports.get("dup_ratio_ow")
     dup_ratio_pw = parent_exports.get("dup_ratio_pw")
@@ -341,23 +386,27 @@ def main():
             },
         },
         "exports": {
-            "Tu": int(parent_outputs.get("exports", {}).get("Tu", params.get("Tu"))),
-            "OW": int(parent_outputs.get("exports", {}).get("OW", params.get("OW"))),
-            "LT": int(parent_outputs.get("exports", {}).get("LT", params.get("LT"))),
-            "PW": int(parent_outputs.get("exports", {}).get("PW", params.get("PW"))),
+            "Tu": parent_exports.get("Tu", params.get("Tu")),
+            "OW": parent_exports.get("OW", params.get("OW")),
+            "LT": parent_exports.get("LT", params.get("LT")),
+            "PW": parent_exports.get("PW", params.get("PW")),
             "prediction_name": prediction_name,
             "measure_name": measure_name,
-            "target_operator": target_operator,
-            "target_event_types": target_event_types,
-            "target_event_count": int(target_event_count),
-            "event_type_count": event_type_count,
+            "value_col": value_col,
+            "direction": direction,
+            "threshold_percentage": float(threshold_percentage),
+            "threshold_value": float(threshold_value),
+            "min_value": float(min_value),
+            "max_value": float(max_value),
             "window_strategy": window_strategy,
             "parent_f03": parent_variant,
             "parent_f02": parent_f02,
             "n_windows": int(total),
             "n_windows_pos": int(positives),
             "n_windows_neg": int(negatives),
-            "class_balance_ratio": float(ratio),
+            "positive_ratio": float(positive_ratio),
+            "negative_ratio": float(negative_ratio),
+            "class_balance_ratio": float(positive_ratio),
             "deduplication_stats": dedup_stats,
             "unique_ratio": dedup_stats["unique_ow_sequences"] / total if total else 0.0,
             "dup_ratio_ow_parent": dup_ratio_ow,
@@ -366,7 +415,12 @@ def main():
         },
         "metrics": {
             "execution_time": float(elapsed),
-            "positive_ratio": float(ratio),
+            "positive_ratio": float(positive_ratio),
+            "negative_ratio": float(negative_ratio),
+            "n_windows": int(total),
+            "n_windows_pos": int(positives),
+            "n_windows_neg": int(negatives),
+            "threshold_value": float(threshold_value),
         },
         "provenance": {
             "generated_at": datetime.now(timezone.utc).isoformat(),

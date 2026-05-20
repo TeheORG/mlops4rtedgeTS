@@ -29,8 +29,6 @@ import shutil
 import platform
 from datetime import datetime, timezone
 from pathlib import Path
-import json
-import re
 from collections import Counter
 
 import numpy as np
@@ -51,13 +49,13 @@ from scripts.core.artifacts import (
     sha256_of_file,
 )
 from scripts.core.phase_io import load_phase_outputs, load_variant_params
-from scripts.core.sequence_utils import pad_sequences
 from scripts.core.traceability import validate_outputs
 
 from tensorflow.lite.python import schema_py_generated as schema_fb
 
 PHASE = "f06_quant"
 PARENT_PHASE = "f05_modeling"
+INPUT_SEQUENCE_COLUMN = "OW_values"
 
 
 # ============================================================
@@ -123,44 +121,48 @@ def build_calibration_input(
     label_col: str,
     model_family: str,
     model,
-    event_type_count: int | None = None,
 ):
-    """Construye X_calib en función de model_family y columnas del dataset."""
-    if "OW_events" in df.columns and model_family in {"sequence_embedding", "cnn1d", "dense_bow"}:
-        sequences = df["OW_events"].tolist()
+    """Construye X_calib desde OW_values como secuencia numerica continua."""
+    if INPUT_SEQUENCE_COLUMN not in df.columns:
+        raise RuntimeError(f"El dataset de F05 debe contener la columna '{INPUT_SEQUENCE_COLUMN}'")
 
-        if model_family in {"sequence_embedding", "cnn1d"}:
-            seqs_idx = []
-            for seq in sequences:
-                cur = []
-                for event_id in seq:
-                    v = int(event_id)
-                    if v < 0:
-                        raise RuntimeError(f"event_id negativo no soportado: {v}")
-                    if event_type_count is not None and v > int(event_type_count):
-                        raise RuntimeError(
-                            f"event_id fuera de rango en calibración: {v} "
-                            f"(esperado 0 o 1..{int(event_type_count)})"
-                        )
-                    cur.append(v)
-                seqs_idx.append(cur)
-            max_len = int(model.input_shape[-1])
-            return pad_sequences(seqs_idx, max_len)
+    input_shape = tuple(model.input_shape)
+    if model_family == "cnn1d":
+        max_len = int(input_shape[1])
+    elif model_family == "dense_bow":
+        max_len = int(input_shape[-1])
+    else:
+        raise ValueError(
+            f"model_family no soportada para secuencias numericas: {model_family}. "
+            "Use cnn1d o dense_bow."
+        )
 
-        if model_family == "dense_bow":
-            input_dim = int(model.input_shape[-1])
-            vocab = sorted({int(event_id) for seq in sequences for event_id in seq})
-            index = {event_id: i for i, event_id in enumerate(vocab)}
-            X = np.zeros((len(sequences), input_dim), dtype=np.float32)
-            for i, seq in enumerate(sequences):
-                for event_id in seq:
-                    col = index.get(event_id)
-                    if col is not None and col < input_dim:
-                        X[i, col] += 1.0
-            return X
+    sequences = df[INPUT_SEQUENCE_COLUMN].tolist()
+    X_2d = np.zeros((len(sequences), max_len), dtype=np.float32)
+    for i, seq in enumerate(sequences):
+        arr = np.asarray(seq, dtype=np.float32)
+        if arr.size == 0:
+            continue
+        trunc = arr[-max_len:]
+        X_2d[i, -len(trunc):] = trunc
 
-    # Fallback genérico: todas las columnas salvo la etiqueta
-    return df.drop(columns=[label_col]).values
+    mean = float(np.mean(X_2d)) if X_2d.size else 0.0
+    std = float(np.std(X_2d)) if X_2d.size else 1.0
+    if std <= 0.0:
+        std = 1.0
+    X_2d = ((X_2d - mean) / std).astype(np.float32)
+
+    if model_family == "cnn1d":
+        X = X_2d[..., np.newaxis]
+    else:
+        X = X_2d
+
+    return X, {
+        "input_sequence_column": INPUT_SEQUENCE_COLUMN,
+        "input_max_len": int(max_len),
+        "normalization_mean": mean,
+        "normalization_std": std,
+    }
 
 
 def build_tflite(model, X_calib, inference_input_dtype=tf.int8):
@@ -281,12 +283,10 @@ def main():
         or ""
     )
 
-    event_type_count = exports_parent.get("event_type_count")
-    event_type_count = int(event_type_count) if event_type_count is not None else None
-
     model = None
     X = None
     y = None
+    calibration_info = {}
 
     operators_float = []
     unsupported_float = []
@@ -316,12 +316,11 @@ def main():
     else:
         model = tf.keras.models.load_model(dst_model)
 
-        X = build_calibration_input(
+        X, calibration_info = build_calibration_input(
             df,
             label_col,
             model_family,
             model,
-            event_type_count=event_type_count,
         )
         y = df[label_col].values
 
@@ -337,20 +336,7 @@ def main():
         edge_capable = len(unsupported_float) == 0
         incompat_reason = ", ".join(unsupported_float) if unsupported_float else None
 
-        if event_type_count is None:
-            edge_capable = False
-            incompat_reason = "Missing event_type_count in parent exports"
-        else:
-            event_type_count = int(event_type_count)
-            if event_type_count > 256:
-                edge_capable = False
-                incompat_reason = (
-                    f"event_type_count={event_type_count} exceeds uint8 capacity (256)"
-                )
-
         requested_input_dtype = tf.int8
-        if edge_capable and event_type_count is not None and event_type_count > 127:
-            requested_input_dtype = tf.uint8
 
         # ----------------------------------------------------------
         # 2. CUANTIZAR (solo si de momento es edge_capable)
@@ -439,6 +425,7 @@ def main():
                     "model_family": model_family,
                     "operators": operators_quant,
                     "model_size_bytes": model_size_bytes,
+                    "calibration": calibration_info,
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                     "runtime": {
                         "tflite_version": tf.__version__,
@@ -526,16 +513,9 @@ def main():
     resolved_ow = params.get("OW") if params.get("OW") is not None else exports_parent.get("OW")
     resolved_lt = params.get("LT") if params.get("LT") is not None else exports_parent.get("LT")
     resolved_pw = params.get("PW") if params.get("PW") is not None else exports_parent.get("PW")
-    resolved_event_type_count = (
-        params.get("event_type_count")
-        if params.get("event_type_count") is not None
-        else exports_parent.get("event_type_count")
-    )
     resolved_prediction_name = params.get("prediction_name") or exports_parent.get("prediction_name")
     if not resolved_prediction_name:
         raise RuntimeError("No se pudo resolver prediction_name para F06")
-    if resolved_event_type_count is None:
-        raise RuntimeError("event_type_count missing en exports del parent F05")
 
     if not model_family:
         raise RuntimeError("No se pudo resolver model_family para F06")
@@ -547,12 +527,13 @@ def main():
         "OW": int(resolved_ow),
         "LT": int(resolved_lt),
         "PW": int(resolved_pw),
-        "event_type_count": int(resolved_event_type_count),
         "prediction_name": str(resolved_prediction_name),
         "runtime_model_name": str(runtime_model_name),
         "model_family": str(model_family),
         "edge_capable": bool(edge_capable),
     }
+
+    exports_out.update(calibration_info)
 
     if incompat_reason is not None:
         exports_out["incompatibility_reason"] = str(incompat_reason)

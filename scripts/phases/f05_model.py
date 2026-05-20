@@ -30,6 +30,8 @@ from html import escape
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import pyarrow as pa
+import pyarrow.parquet as pq
 from sklearn.metrics import (
     confusion_matrix,
     precision_score,
@@ -47,7 +49,6 @@ from scripts.core.artifacts import (
     sha256_of_file,
 )
 from scripts.core.phase_io import load_phase_outputs, load_variant_params
-from scripts.core.sequence_utils import pad_sequences
 from scripts.core.traceability import validate_outputs
 
 # ============================================================
@@ -57,6 +58,7 @@ from scripts.core.traceability import validate_outputs
 PHASE = "f05_modeling"
 PARENT_PHASE = "f04_targets"
 FAST_MAX_MAJORITY_SAMPLES = 20_000
+INPUT_SEQUENCE_COLUMN = "OW_values"
 
 # ── Análisis opcionales (desactivar para acelerar ejecución) ──────────────────
 ENABLE_EXACT_DUPLICATE_ANALYSIS    = False   # set operations, rápido
@@ -98,7 +100,7 @@ def configure_reproducibility(seed: int, strict_cross_os: bool = False):
 # ============================================================
 
 def stable_seq_hash(seq) -> str:
-    arr = np.asarray(seq, dtype=np.int32)
+    arr = np.asarray(seq, dtype=np.float64)
     if arr.size == 0:
         return "EMPTY"
     return hashlib.md5(arr.tobytes()).hexdigest()
@@ -131,21 +133,21 @@ def ensure_observation_hash_series(df: pd.DataFrame) -> tuple[pd.Series, str]:
         hash_series = df[hash_col].astype(str).fillna("MISSING_HASH")
         return hash_series.reset_index(drop=True), str(hash_col)
 
-    if "OW_events" not in df.columns:
+    if "OW_values" not in df.columns:
         raise RuntimeError(
             "No se encontró columna hash de observación (OW_hash/hash_window/...) "
-            "ni la columna OW_events para calcularla."
+            "ni la columna OW_values para calcularla."
         )
 
-    hash_series = df["OW_events"].apply(stable_seq_hash).astype(str)
-    return hash_series.reset_index(drop=True), "computed_from_OW_events"
+    hash_series = df["OW_values"].apply(stable_seq_hash).astype(str)
+    return hash_series.reset_index(drop=True), "computed_from_OW_values"
 
 
 def deduplicate_labeled_windows(df: pd.DataFrame, mode: str):
     """
     mode:
       - none: no deduplicar
-      - all: deduplicar todas las ventanas por OW_events
+      - all: deduplicar todas las ventanas por OW_values
       - neg_only: deduplicar solo las negativas
       - auto: usa neg_only por defecto; si hay suficientes positivos únicos,
               puede pasar a all
@@ -164,13 +166,13 @@ def deduplicate_labeled_windows(df: pd.DataFrame, mode: str):
         return df.copy(), stats
 
     work = df.copy()
-    work["_ow_hash"] = work["OW_events"].apply(stable_seq_hash)
+    work["_ow_hash"] = work["OW_values"].apply(stable_seq_hash)
 
     n_before = int(len(work))
 
     """
     Ambiguity handling:
-    If the same OW_events sequence appears with conflicting labels,
+    If the same OW_values sequence appears with conflicting labels,
     this indicates instability or noise in the target.
 
     We apply a strict consistency threshold (>= 0.995):
@@ -315,73 +317,6 @@ def split_vectorized_dataset(X, y, eval_cfg: dict):
     y_test = y[idx_test]
     return X_train, y_train, X_val, y_val, X_test, y_test
 
-
-def vectorize_dense_bow(df: pd.DataFrame, label_col: str):
-    sequences = df["OW_events"].tolist()
-    y = df[label_col].astype("int32").values
-
-    vocab = sorted(set(event_id for seq in sequences for event_id in seq))
-    index = {event_id: i for i, event_id in enumerate(vocab)}
-
-    X = np.zeros((len(sequences), len(vocab)), dtype=np.float32)
-    for i, seq in enumerate(sequences):
-        for event_id in seq:
-            X[i, index[event_id]] += 1.0
-
-    return X, y, {
-        "input_dim": int(X.shape[1]),
-        "vocab_size": int(len(vocab)),
-        "vectorization": "dense_bow",
-    }
-
-
-def vectorize_sequence(df: pd.DataFrame, label_col: str, event_type_count: int):
-    sequences = df["OW_events"].tolist()
-    y = df[label_col].astype("int32").values
-
-    if event_type_count < 1:
-        raise RuntimeError("event_type_count must be >= 1")
-
-    normalized_seqs = []
-    for seq in sequences:
-        cur = []
-        for event_id in seq:
-            v = int(event_id)
-            # Convención del catálogo: IDs reales en 1..n; 0 reservado para padding/no-evento.
-            if v < 0 or v > event_type_count:
-                raise RuntimeError(
-                    f"event_id fuera de rango para secuencia: {v} "
-                    f"(esperado 0 o 1..{event_type_count})"
-                )
-            cur.append(v)
-        normalized_seqs.append(cur)
-
-    lengths = [len(seq) for seq in normalized_seqs]
-    max_len = max(1, int(np.percentile(lengths, 95))) if lengths else 1
-
-    X = pad_sequences(normalized_seqs, max_len)
-
-    return X, y, {
-        "vocab_size": int(event_type_count),
-        "max_len": int(max_len),
-        "vectorization": "sequence",
-    }
-
-
-def vectorize_for_family(df: pd.DataFrame, label_col: str, model_family: str, event_type_count: int):
-    if "OW_events" not in df.columns:
-        raise RuntimeError("El dataset de F04 debe contener la columna 'OW_events'")
-
-    if model_family == "dense_bow":
-        return vectorize_dense_bow(df, label_col)
-
-    if model_family in {"sequence_embedding", "cnn1d"}:
-        return vectorize_sequence(df, label_col, event_type_count)
-
-    raise ValueError(
-        f"model_family no soportada: {model_family}. "
-        "Use una de: dense_bow, sequence_embedding, cnn1d"
-    )
 
 
 def build_hash_leakage_report(
@@ -624,14 +559,14 @@ def print_hash_leakage_report(leakage_report: dict, hash_source: str) -> None:
     else:
         print("[INFO] No se detectó solape de hashes entre train/val/test.")
 
-def canonicalize_events_sequence(seq) -> tuple[int, ...]:
+def canonicalize_events_sequence(seq) -> tuple[float, ...]:
     if isinstance(seq, np.ndarray):
-        return tuple(int(v) for v in seq.tolist())
+        return tuple(float(v) for v in seq.tolist())
     if isinstance(seq, (list, tuple)):
-        return tuple(int(v) for v in seq)
+        return tuple(float(v) for v in seq)
     if pd.isna(seq):
         return tuple()
-    return tuple(int(v) for v in list(seq))
+    return tuple(float(v) for v in list(seq))
 
 
 def build_unordered_key(seq: tuple[int, ...]) -> str:
@@ -1114,7 +1049,7 @@ def print_overlap_section(section_name: str, section: dict) -> None:
 
 
 def print_split_leakage_report(leakage_report: dict) -> None:
-    print("[INFO] Leakage audit por OW_events")
+    print("[INFO] Leakage audit por OW_values")
     print_overlap_section("exact_duplicates", leakage_report["exact_duplicates"])
     print_overlap_section("unordered_duplicates", leakage_report["unordered_duplicates"])
 
@@ -1632,7 +1567,6 @@ def write_non_trainable_outputs(
     OW: int,
     LT: int,
     PW: int,
-    event_type_count: int,
     label_distribution: dict[int, int],
     reason: str,
     start_time: float,
@@ -1693,7 +1627,6 @@ def write_non_trainable_outputs(
             "OW": int(OW),
             "LT": int(LT),
             "PW": int(PW),
-            "event_type_count": int(event_type_count),
             "prediction_name": str(prediction_name),
             "model_family": str(model_family),
             "trainable": False,
@@ -1725,6 +1658,177 @@ def write_non_trainable_outputs(
 
     print(f"[WARN] Modelo no entrenable para {variant}: {reason}")
     print(f"===== FASE {PHASE} COMPLETADA SIN ENTRENAMIENTO — variante {variant} =====")
+
+
+# ============================================================
+# NUMERIC-SEQUENCE OVERRIDES
+# ============================================================
+
+def load_labeled_dataset_for_training(
+    dataset_path,
+    label_col: str,
+    strategy: str,
+    max_majority_samples: int | None,
+    random_state: int = 123,
+) -> pd.DataFrame:
+    columns = [INPUT_SEQUENCE_COLUMN, label_col]
+
+    if strategy != "rare_events":
+        return pd.read_parquet(dataset_path, columns=columns)
+
+    max_maj = FAST_MAX_MAJORITY_SAMPLES if max_majority_samples is None else int(max_majority_samples)
+    max_maj = min(max_maj, FAST_MAX_MAJORITY_SAMPLES)
+
+    labels = (
+        pq.read_table(dataset_path, columns=[label_col], memory_map=True)
+        .column(0)
+        .to_numpy(zero_copy_only=False)
+    )
+    pos_indices = np.flatnonzero(labels == 1)
+    neg_indices = np.flatnonzero(labels == 0)
+
+    rng = np.random.default_rng(random_state)
+    if len(neg_indices) > max_maj:
+        neg_indices = rng.choice(neg_indices, size=max_maj, replace=False)
+
+    selected_indices = np.sort(np.concatenate([pos_indices, neg_indices]).astype(np.int64))
+    if selected_indices.size == 0:
+        return pd.DataFrame(columns=columns)
+
+    parquet_file = pq.ParquetFile(dataset_path, memory_map=True)
+    frames = []
+    row_offset = 0
+    cursor = 0
+    for batch in parquet_file.iter_batches(batch_size=50_000, columns=columns):
+        batch_len = batch.num_rows
+        batch_end = row_offset + batch_len
+        start_cursor = cursor
+        while cursor < selected_indices.size and selected_indices[cursor] < batch_end:
+            cursor += 1
+        if cursor > start_cursor:
+            local_idx = selected_indices[start_cursor:cursor] - row_offset
+            frames.append(batch.take(pa.array(local_idx)).to_pandas())
+        row_offset = batch_end
+        if cursor >= selected_indices.size:
+            break
+
+    return pd.concat(frames, axis=0).sample(frac=1.0, random_state=random_state).reset_index(drop=True)
+
+
+def pad_numeric_sequences(sequences, max_len: int) -> np.ndarray:
+    X = np.zeros((len(sequences), max_len), dtype=np.float32)
+    for i, seq in enumerate(sequences):
+        arr = np.asarray(seq, dtype=np.float32)
+        if arr.size == 0:
+            continue
+        trunc = arr[-max_len:]
+        X[i, -len(trunc):] = trunc
+    return X
+
+
+def vectorize_numeric_sequence(df: pd.DataFrame, label_col: str, model_family: str):
+    if INPUT_SEQUENCE_COLUMN not in df.columns:
+        raise RuntimeError(f"El dataset de F04 debe contener la columna '{INPUT_SEQUENCE_COLUMN}'")
+
+    sequences = df[INPUT_SEQUENCE_COLUMN].tolist()
+    y = df[label_col].astype("int32").values
+
+    lengths = [len(seq) for seq in sequences]
+    max_len = max(1, int(np.percentile(lengths, 95))) if lengths else 1
+    X_2d = pad_numeric_sequences(sequences, max_len)
+
+    mean = float(np.mean(X_2d)) if X_2d.size else 0.0
+    std = float(np.std(X_2d)) if X_2d.size else 1.0
+    if std <= 0.0:
+        std = 1.0
+    X_2d = ((X_2d - mean) / std).astype(np.float32)
+
+    if model_family == "cnn1d":
+        X = X_2d[..., np.newaxis]
+        vectorization = "numeric_sequence_cnn1d"
+    else:
+        X = X_2d
+        vectorization = "numeric_sequence_dense"
+
+    return X, y, {
+        "input_dim": int(X_2d.shape[1]),
+        "max_len": int(max_len),
+        "vectorization": vectorization,
+        "sequence_column": INPUT_SEQUENCE_COLUMN,
+        "normalization_mean": mean,
+        "normalization_std": std,
+    }
+
+
+def vectorize_for_family(df: pd.DataFrame, label_col: str, model_family: str):
+    if model_family in {"dense_bow", "cnn1d"}:
+        return vectorize_numeric_sequence(df, label_col, model_family)
+
+    if model_family == "sequence_embedding":
+        raise ValueError(
+            "sequence_embedding ya no aplica: OW_values contiene medidas continuas, "
+            "no IDs categoricos de evento. Use cnn1d o dense_bow."
+        )
+
+    raise ValueError(
+        f"model_family no soportada: {model_family}. "
+        "Use una de: dense_bow, cnn1d"
+    )
+
+
+def build_cnn1d_model(aux: dict, hp: dict) -> tf.keras.Model:
+    n_layers = int(hp.get("n_layers", 1))
+    units = int(hp.get("units", 64))
+    dropout = float(hp.get("dropout", 0.0))
+    filters = int(hp.get("filters", 64))
+    kernel_size = int(hp.get("kernel_size", 3))
+
+    model = tf.keras.Sequential(name="cnn1d_numeric_binary_classifier")
+    model.add(tf.keras.layers.Input(shape=(int(aux["max_len"]), 1)))
+    model.add(
+        tf.keras.layers.Conv1D(
+            filters=filters,
+            kernel_size=kernel_size,
+            activation="relu",
+            padding="same",
+        )
+    )
+    model.add(tf.keras.layers.GlobalMaxPooling1D())
+
+    for _ in range(n_layers):
+        model.add(tf.keras.layers.Dense(units, activation="relu"))
+        if dropout > 0:
+            model.add(tf.keras.layers.Dropout(dropout))
+
+    model.add(tf.keras.layers.Dense(1, activation="sigmoid"))
+    return model
+
+
+def build_model(
+    model_family: str,
+    hp: dict,
+    aux: dict,
+) -> tf.keras.Model:
+    if model_family == "dense_bow":
+        model = build_dense_bow_model(aux, hp)
+    elif model_family == "cnn1d":
+        model = build_cnn1d_model(aux, hp)
+    else:
+        raise ValueError(
+            f"model_family no soportada: {model_family}. "
+            "Use una de: dense_bow, cnn1d"
+        )
+
+    lr = float(hp.get("learning_rate", 1e-3))
+    model.compile(
+        optimizer=build_adam_optimizer(lr),
+        loss="binary_crossentropy",
+        metrics=[
+            tf.keras.metrics.Precision(name="precision"),
+            tf.keras.metrics.Recall(name="recall"),
+        ],
+    )
+    return model
 
 
 # ============================================================
@@ -1779,11 +1883,7 @@ def main():
 
     # Label column: si F04 lo expone, lo usamos; si no, usamos 'target'
     label_col = exports_parent.get("target_column", "label")
-    event_type_count = params.get("event_type_count")
-    if event_type_count is None:
-        event_type_count = exports_parent.get("event_type_count")
-    if event_type_count is None:
-        raise RuntimeError("event_type_count missing en exports del parent F04")
+    
 
     Tu = int(params.get("Tu", exports_parent.get("Tu", 0)))
     OW = int(params.get("OW", exports_parent.get("OW", 0)))
@@ -1818,7 +1918,13 @@ def main():
     # 2. Cargar dataset etiquetado
     # ---------------------------------------------
     print(f"[INFO] Leyendo dataset etiquetado de F04: {dataset_path}")
-    df = pd.read_parquet(dataset_path)
+    df = load_labeled_dataset_for_training(
+        dataset_path,
+        label_col,
+        imbalance_strategy,
+        imbalance_max_majority,
+        random_state=123,
+    )
 
     if label_col not in df.columns:
         raise RuntimeError(f"La columna de etiqueta '{label_col}' no está en el dataset")
@@ -1842,7 +1948,11 @@ def main():
     strategy = imbalance_strategy
     max_maj = imbalance_max_majority
 
-    if strategy == "rare_events" and max_maj is not None:
+    if strategy == "rare_events":
+        if max_maj is None:
+            max_maj = FAST_MAX_MAJORITY_SAMPLES
+        max_maj = min(int(max_maj), FAST_MAX_MAJORITY_SAMPLES)
+    elif strategy == "rare_events" and max_maj is not None:
         max_maj = min(int(max_maj), FAST_MAX_MAJORITY_SAMPLES)
         pos = df[df[label_col] == 1]
         neg = df[df[label_col] == 0]
@@ -1892,7 +2002,6 @@ def main():
         df,
         label_col,
         model_family,
-        int(event_type_count),
     )
     print(f"[INFO] Vectorization complete: X.shape={X.shape}, y.shape={y.shape}")
     label_distribution = summarize_label_distribution(y)
@@ -1909,7 +2018,6 @@ def main():
             OW=OW,
             LT=LT,
             PW=PW,
-            event_type_count=int(event_type_count),
             label_distribution=label_distribution,
             reason=split_incompatibility,
             start_time=start_time,
@@ -1930,7 +2038,6 @@ def main():
             OW=OW,
             LT=LT,
             PW=PW,
-            event_type_count=int(event_type_count),
             label_distribution=label_distribution,
             reason=f"No se pudo generar split train/val/test: {exc}",
             start_time=start_time,
@@ -1948,7 +2055,7 @@ def main():
     print(f"[INFO] Split sizes: train={len(y_train)}, val={len(y_val)}, test={len(y_test)}")
     print(f"[INFO] Starting leakage detection analysis (this may take a few minutes for large datasets)...")
     leakage_report = build_split_leakage_report(
-        df["OW_events"],
+        df["OW_values"],
         df[label_col],
         {
             "train": idx_train,
@@ -2124,7 +2231,6 @@ def main():
             "OW": int(OW),
             "LT": int(LT),
             "PW": int(PW),
-            "event_type_count": int(event_type_count),
             "prediction_name": str(prediction_name),
             "measure_name": str(measure_name),
             "model_family": str(model_family),

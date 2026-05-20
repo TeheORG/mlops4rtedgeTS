@@ -50,6 +50,11 @@ def sha256_of_file(path: Path) -> str:
 
 def save_outputs_yaml(variant_dir: Path, content: dict):
     outputs_path = variant_dir / "outputs.yaml"
+    if "measure" in content:
+        measure = content["measure"]
+        measure_cols = content.get("exports", {}).get("measure_cols", [])
+        if measure not in measure_cols:
+            raise ValueError(f"Invalid measure '{measure}'. Must be one of: {measure_cols}")
     yaml.safe_dump(content, outputs_path.open("w"), sort_keys=False)
     return outputs_path
 
