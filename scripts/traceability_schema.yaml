@@ -399,17 +399,27 @@ phases:
         inherited: false
         regex: "^[a-z0-9_]+$"
 
+      event_strategy:
+        type: string
+        required: false
+        inherited: false
+        default: threshold
+        allowed:
+          - threshold
+          - transitions
+
       # Umbral porcentual entre el mínimo y máximo exportados por F02
       threshold:
         type: float
-        required: true
+        required: false
         inherited: false
 
       # Sentido de activación del objetivo sobre la ventana de predicción
       direction:
         type: string
-        required: true
+        required: false
         inherited: false
+        default: high
         allowed:
           - high
           - low
@@ -452,33 +462,52 @@ phases:
           type: string
           required: true
 
+        event_strategy:
+          type: string
+          required: false
+
+        label_rule:
+          type: string
+          required: false
+
+        input_window_column:
+          type: string
+          required: false
+
         measure_name:
           type: string
-          required: true
+          required: false
+          nullable: true
 
         value_col:
           type: string
-          required: true
+          required: false
+          nullable: true
 
         direction:
           type: string
-          required: true
+          required: false
+          nullable: true
 
         threshold_percentage:
           type: float
-          required: true
+          required: false
+          nullable: true
 
         threshold_value:
           type: float
-          required: true
+          required: false
+          nullable: true
 
         min_value:
           type: float
-          required: true
+          required: false
+          nullable: true
 
         max_value:
           type: float
-          required: true
+          required: false
+          nullable: true
 
         # Estadísticas resultantes
         n_windows:

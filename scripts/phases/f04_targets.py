@@ -66,6 +66,34 @@ def label_prediction_batch(pw_array, threshold_value: float, direction: str) -> 
     return labels
 
 
+def label_transition_batch(ow_array, pw_array) -> np.ndarray:
+    ow_offsets, ow_values = _list_offsets_and_values(ow_array)
+    pw_offsets, pw_values = _list_offsets_and_values(pw_array)
+
+    n_rows = len(ow_offsets) - 1
+    if n_rows != len(pw_offsets) - 1:
+        raise ValueError(
+            "OW_events y PW_events deben tener el mismo numero de filas"
+        )
+
+    labels = np.zeros(n_rows, dtype=np.int8)
+    if n_rows == 0:
+        return labels
+
+    ow_lengths = np.diff(ow_offsets)
+    pw_lengths = np.diff(pw_offsets)
+    non_empty = (ow_lengths > 0) & (pw_lengths > 0)
+    if not np.any(non_empty):
+        return labels
+
+    last_ow = ow_values[ow_offsets[1:][non_empty] - 1]
+    pw_starts = pw_offsets[:-1][non_empty]
+    pw_has_one = np.maximum.reduceat(pw_values == 1, pw_starts)
+    labels[non_empty] = ((last_ow == 0) & pw_has_one).astype(np.int8)
+
+    return labels
+
+
 class OWDedupStats:
     def __init__(self):
         self._counts_by_hash = {}
@@ -134,6 +162,12 @@ def require_bool(value, name: str) -> bool:
     if isinstance(value, (int, float)):
         return bool(value)
     raise ValueError(f"{name} debe ser booleano")
+
+
+def fmt_optional(value, fmt: str = ".12g") -> str:
+    if value is None:
+        return "N/A"
+    return format(value, fmt)
 
 
 def dedup_stats_from_parent(parent_exports: dict, total: int) -> dict:
@@ -207,11 +241,9 @@ def main():
 
     parent_parquet = pq.ParquetFile(parent_dataset_path, memory_map=True)
     parent_columns = set(parent_parquet.schema_arrow.names)
-
-    if "OW_values" not in parent_columns or "PW_values" not in parent_columns:
-        raise RuntimeError(
-            "El dataset F03 debe contener columnas OW_values y PW_values"
-        )
+    event_strategy = str(params.get("event_strategy", "threshold")).strip().lower()
+    if event_strategy not in {"threshold", "transitions"}:
+        raise ValueError("event_strategy debe ser 'threshold' o 'transitions'")
 
     # --------------------------------------------------------
     # Resolver F02 para min/max de la medida
@@ -219,27 +251,33 @@ def main():
 
     parent_exports = parent_outputs.get("exports", {})
     parent_f02 = parent_exports.get("parent_f02")
-    if not parent_f02:
-        raise RuntimeError("F03 no exporta parent_f02; no se puede resolver F02")
+    measure_name = None
+    value_col = None
+    min_value = None
+    max_value = None
 
-    f02_outputs, _ = load_phase_outputs(
-        PROJECT_ROOT,
-        "f02_events",
-        parent_f02,
-        "F04",
-    )
+    if event_strategy == "threshold":
+        if not parent_f02:
+            raise RuntimeError("F03 no exporta parent_f02; no se puede resolver F02")
 
-    f02_exports = f02_outputs.get("exports", {})
-    f02_metrics = f02_outputs.get("metrics", {})
+        f02_outputs, _ = load_phase_outputs(
+            PROJECT_ROOT,
+            "f02_events",
+            parent_f02,
+            "F04",
+        )
 
-    measure_name = f02_exports.get("measure_name")
-    value_col = f02_exports.get("value_col", "value")
-    min_value = require_float(f02_metrics.get("min"), "F02 metrics.min")
-    max_value = require_float(f02_metrics.get("max"), "F02 metrics.max")
+        f02_exports = f02_outputs.get("exports", {})
+        f02_metrics = f02_outputs.get("metrics", {})
 
-    if measure_name is None:
+        measure_name = f02_exports.get("measure_name")
+        value_col = f02_exports.get("value_col", "value")
+        min_value = require_float(f02_metrics.get("min"), "F02 metrics.min")
+        max_value = require_float(f02_metrics.get("max"), "F02 metrics.max")
+
+    if event_strategy == "threshold" and measure_name is None:
         raise RuntimeError("F02 no exporta measure_name")
-    if max_value < min_value:
+    if event_strategy == "threshold" and max_value < min_value:
         raise RuntimeError(
             f"Rango inválido en F02: min={min_value}, max={max_value}"
         )
@@ -248,22 +286,51 @@ def main():
     # Parámetros de objetivo
     # --------------------------------------------------------
 
-    threshold_percentage = float(params["threshold"])
-    direction = str(params["direction"]).strip().lower()
+    threshold_percentage = None
+    direction = None
+    threshold_value = None
 
-    if not 0.0 <= threshold_percentage <= 100.0:
+    if event_strategy == "threshold":
+        if "OW_values" not in parent_columns or "PW_values" not in parent_columns:
+            raise RuntimeError(
+                "event_strategy=threshold requiere columnas OW_values y PW_values en F03"
+            )
+        if "threshold" not in params:
+            raise ValueError("event_strategy=threshold requiere threshold")
+        threshold_percentage = float(params["threshold"])
+        direction = str(params["direction"]).strip().lower()
+
+    if event_strategy == "threshold" and not 0.0 <= threshold_percentage <= 100.0:
         raise ValueError("threshold debe estar en el rango [0, 100]")
-    if direction not in {"high", "low"}:
+    if event_strategy == "threshold" and direction not in {"high", "low"}:
         raise ValueError("direction debe ser 'high' o 'low'")
 
-    threshold_value = min_value + (threshold_percentage / 100.0) * (max_value - min_value)
+    if event_strategy == "threshold":
+        threshold_value = min_value + (threshold_percentage / 100.0) * (max_value - min_value)
+        input_columns = ["OW_values", "PW_values"]
+        output_column = "OW_values"
+        output_list_type = parent_parquet.schema_arrow.field(output_column).type
+        label_rule = f"any(PW_values {direction} threshold)"
+        default_prediction_name = f"{measure_name}_{direction}_{threshold_percentage:g}pct"
+    else:
+        if "OW_events" not in parent_columns or "PW_events" not in parent_columns:
+            raise RuntimeError(
+                "event_strategy=transitions requiere columnas OW_events y PW_events en F03"
+        )
+        input_columns = ["OW_events", "PW_events"]
+        output_column = "OW_events"
+        output_list_type = parent_parquet.schema_arrow.field(output_column).type
+        label_rule = "last(OW_events) == 0 AND any(PW_events == 1)"
+        default_prediction_name = "event_transition_0_to_1"
 
     prediction_name = params.get(
         "prediction_name",
-        f"{measure_name}_{direction}_{threshold_percentage:g}pct",
+        default_prediction_name,
     )
 
     print("[INFO] Objetivo de predicción:")
+    print(f"  event_strategy        = {event_strategy}")
+    print(f"  label_rule            = {label_rule}")
     print(f"  measure_name          = {measure_name}")
     print(f"  direction             = {direction}")
     print(f"  threshold_percentage  = {threshold_percentage}")
@@ -276,7 +343,7 @@ def main():
     output_path = variant_dir / "04_targets.parquet"
 
     schema = pa.schema([
-        ("OW_values", pa.list_(pa.float64())),
+        (output_column, output_list_type),
         ("label", pa.int8()),
     ])
 
@@ -293,11 +360,14 @@ def main():
     try:
         for batch in parent_parquet.iter_batches(
             batch_size=batch_size,
-            columns=["OW_values", "PW_values"],
+            columns=input_columns,
         ):
-            ow_array = batch.column(batch.schema.get_field_index("OW_values"))
-            pw_array = batch.column(batch.schema.get_field_index("PW_values"))
-            labels = label_prediction_batch(pw_array, threshold_value, direction)
+            ow_array = batch.column(batch.schema.get_field_index(input_columns[0]))
+            pw_array = batch.column(batch.schema.get_field_index(input_columns[1]))
+            if event_strategy == "transitions":
+                labels = label_transition_batch(ow_array, pw_array)
+            else:
+                labels = label_prediction_batch(pw_array, threshold_value, direction)
 
             total += len(labels)
             positives += int(labels.sum())
@@ -345,13 +415,15 @@ def main():
         <p>Parent F03: {parent_variant}</p>
         <p>Parent F02: {parent_f02}</p>
         <p>Prediction name: {prediction_name}</p>
+        <p>Event strategy: {event_strategy}</p>
+        <p>Label rule: {label_rule}</p>
         <p>Measure: {measure_name}</p>
         <p>Value column: {value_col}</p>
         <p>Direction: {direction}</p>
-        <p>Threshold percentage: {threshold_percentage:.6f}</p>
-        <p>Threshold value: {threshold_value:.12g}</p>
-        <p>Min value: {min_value:.12g}</p>
-        <p>Max value: {max_value:.12g}</p>
+        <p>Threshold percentage: {fmt_optional(threshold_percentage, ".6f")}</p>
+        <p>Threshold value: {fmt_optional(threshold_value)}</p>
+        <p>Min value: {fmt_optional(min_value)}</p>
+        <p>Max value: {fmt_optional(max_value)}</p>
         <p>Total windows: {total}</p>
         <p>Positives: {positives}</p>
         <p>Negatives: {negatives}</p>
@@ -391,13 +463,18 @@ def main():
             "LT": parent_exports.get("LT", params.get("LT")),
             "PW": parent_exports.get("PW", params.get("PW")),
             "prediction_name": prediction_name,
+            "event_strategy": event_strategy,
+            "label_rule": label_rule,
+            "input_window_column": output_column,
             "measure_name": measure_name,
             "value_col": value_col,
             "direction": direction,
-            "threshold_percentage": float(threshold_percentage),
-            "threshold_value": float(threshold_value),
-            "min_value": float(min_value),
-            "max_value": float(max_value),
+            "threshold_percentage": (
+                float(threshold_percentage) if threshold_percentage is not None else None
+            ),
+            "threshold_value": float(threshold_value) if threshold_value is not None else None,
+            "min_value": float(min_value) if min_value is not None else None,
+            "max_value": float(max_value) if max_value is not None else None,
             "window_strategy": window_strategy,
             "parent_f03": parent_variant,
             "parent_f02": parent_f02,
@@ -420,7 +497,7 @@ def main():
             "n_windows": int(total),
             "n_windows_pos": int(positives),
             "n_windows_neg": int(negatives),
-            "threshold_value": float(threshold_value),
+            "threshold_value": float(threshold_value) if threshold_value is not None else None,
         },
         "provenance": {
             "generated_at": datetime.now(timezone.utc).isoformat(),

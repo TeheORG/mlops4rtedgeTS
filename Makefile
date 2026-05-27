@@ -6,6 +6,7 @@ else
   PYTHON_LOCAL ?= python3.11
 endif
 
+F56_GPU ?= false
 
 ifeq ($(shell command -v $(PYTHON_LOCAL) 2>/dev/null),)
   $(error python3.11 not found. Please install it before running make setup)
@@ -737,13 +738,16 @@ VARIANTS_DIR4  = executions/$(PHASE4)
 
 variant4: check-variant-format
 	@test -n "$(PARENT)"   || (echo "[ERROR] You must specify PARENT=v3XX (parent F03 variant)"; exit 1)
-	@test -n "$(THRESHOLD)" || (echo "[ERROR] You must specify THRESHOLD=<0..100>"; exit 1)
-	@test -n "$(DIRECTION)" || (echo "[ERROR] You must specify DIRECTION=high|low"; exit 1)
+	@if [ "$(EVENT_STRATEGY)" != "transitions" ]; then \
+		test -n "$(THRESHOLD)" || (echo "[ERROR] You must specify THRESHOLD=<0..100>"; exit 1); \
+		test -n "$(DIRECTION)" || (echo "[ERROR] You must specify DIRECTION=high|low"; exit 1); \
+	fi
 
 	@$(eval EXTRA_FLAGS := )
 	@$(eval EXTRA_FLAGS += PARENT=$(PARENT))
-	@$(eval EXTRA_FLAGS += threshold=$(THRESHOLD))
-	@$(eval EXTRA_FLAGS += direction=$(DIRECTION))
+	@$(if $(strip $(EVENT_STRATEGY)),$(eval EXTRA_FLAGS += event_strategy=$(EVENT_STRATEGY)))
+	@$(if $(strip $(THRESHOLD)),$(eval EXTRA_FLAGS += threshold=$(THRESHOLD)))
+	@$(if $(strip $(DIRECTION)),$(eval EXTRA_FLAGS += direction=$(DIRECTION)))
 	@$(if $(strip $(NAME)),$(eval EXTRA_FLAGS += prediction_name=$(NAME)))
 
 	@$(MAKE) variant-generic \
@@ -807,6 +811,8 @@ help4:
 	@echo "   make variant4 VARIANT=v401 PARENT=v301 \\"
 	@echo "       THRESHOLD=80 DIRECTION=high \\"
 	@echo "       NAME=battery_high"
+	@echo "   make variant4 VARIANT=v401 PARENT=v301 \\"
+	@echo "       EVENT_STRATEGY=transitions NAME=event_transition_0_to_1"
 	@echo ""
 	@echo " Execution:"
 	@echo "   make script4 VARIANT=v401"
@@ -831,8 +837,15 @@ SCRIPT5_MODULE = scripts.phases.f05_model
 VARIANTS_DIR5 = executions/$(PHASE5)
 
 # Docker único para F05/F06 (reproducible entre OS)
-F56_DOCKER_IMAGE ?= mlops4ofp-f56:py311-tf215
-F56_DOCKERFILE ?= scripts/docker/Dockerfile.f56
+ifeq ($(F56_GPU),true)
+  F56_DOCKER_IMAGE ?= mlops-f56-gpu:latest
+  F56_DOCKERFILE ?= scripts/docker/Dockerfile.f56_gpu
+  F56_DOCKER_RUN_ARGS ?= --gpus all
+else
+  F56_DOCKER_IMAGE ?= mlops4ofp-f56:py311-tf215
+  F56_DOCKERFILE ?= scripts/docker/Dockerfile.f56
+  F56_DOCKER_RUN_ARGS ?=
+endif
 F56_DOCKER_PLATFORM ?= linux/amd64
 
 ensure-f56-docker-image:
@@ -918,6 +931,7 @@ script5: check-variant-format ensure-f56-docker-image
 	$(MAKE) --no-print-directory generate_lineage || true; \
 	echo "==> Running F05 in Docker ($(F56_DOCKER_IMAGE)) for $$VARIANT_NORM"; \
 	docker run --rm --platform $(F56_DOCKER_PLATFORM) \
+		$(F56_DOCKER_RUN_ARGS) \
 		$(DOCKER_HOST_USER_ARGS) \
 		-v "$(DOCKER_HOST_PWD):$(DOCKER_WORKSPACE_PATH)" \
 		-w $(DOCKER_WORKSPACE_PATH) \
@@ -1164,6 +1178,7 @@ script6: check-variant-format ensure-f56-docker-image
 	$(MAKE) --no-print-directory generate_lineage || true; \
 	echo "==> Running F06 in Docker ($(F56_DOCKER_IMAGE)) for $$VARIANT_NORM"; \
 	docker run --rm --platform $(F56_DOCKER_PLATFORM) \
+		$(F56_DOCKER_RUN_ARGS) \
 		$(DOCKER_HOST_USER_ARGS) \
 		-v "$(DOCKER_HOST_PWD):$(DOCKER_WORKSPACE_PATH)" \
 		-w $(DOCKER_WORKSPACE_PATH) \

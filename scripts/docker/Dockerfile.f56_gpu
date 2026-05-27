@@ -1,0 +1,55 @@
+FROM tensorflow/tensorflow:2.15.0-gpu
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV TF_ENABLE_ONEDNN_OPTS=0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    gcc \
+    g++ \
+    git \
+    make \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+COPY requirements-docker-gpu.txt /tmp/requirements.txt
+
+RUN set -eux; \
+    : > /tmp/tf-constraints.txt; \
+    for pkg in \
+        tensorflow \
+        keras \
+        tensorboard \
+        tensorboard-data-server \
+        numpy \
+        protobuf \
+        ml-dtypes \
+        h5py \
+        grpcio \
+        wrapt \
+        gast \
+        flatbuffers \
+        astunparse \
+        google-pasta \
+        libclang \
+        tensorflow-io-gcs-filesystem \
+        termcolor \
+        opt-einsum \
+    ; do \
+        python -m pip show "$pkg" \
+            | awk '/^Name:/{name=$2} /^Version:/{version=$2} END{if (name && version) print name "==" version}' \
+            >> /tmp/tf-constraints.txt || true; \
+    done; \
+    cat /tmp/tf-constraints.txt
+
+RUN python -m pip install --upgrade pip setuptools && \
+    python -m pip install --no-cache-dir --ignore-installed blinker==1.8.2 && \
+    python -m pip install --no-cache-dir -c /tmp/tf-constraints.txt -r /tmp/requirements.txt && \
+    python -c "import tensorflow as tf; import pandas; import pyarrow; import sklearn; import matplotlib; import seaborn; import yaml; import tqdm; import fastparquet; import statsmodels; import mlflow; import dvc; import dotenv; import pathspec; import openai; import pulp; print('build imports ok'); print(tf.__version__)"
+
+CMD ["bash"]

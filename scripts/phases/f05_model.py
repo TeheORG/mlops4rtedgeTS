@@ -307,6 +307,49 @@ def split_dataset_indices(y, eval_cfg: dict):
     return idx_train, idx_val, idx_test
 
 
+def apply_rare_events_to_train_indices(
+    y,
+    idx_train: np.ndarray,
+    max_majority_samples: int | None,
+    random_state: int = 123,
+) -> tuple[np.ndarray, int]:
+    max_maj = FAST_MAX_MAJORITY_SAMPLES if max_majority_samples is None else int(max_majority_samples)
+    max_maj = min(max_maj, FAST_MAX_MAJORITY_SAMPLES)
+
+    y_train = y[idx_train]
+    pos_idx = idx_train[y_train == 1]
+    neg_idx = idx_train[y_train == 0]
+
+    rng = np.random.default_rng(random_state)
+    if len(neg_idx) > max_maj:
+        neg_idx = rng.choice(neg_idx, size=max_maj, replace=False)
+
+    sampled = np.concatenate([pos_idx, neg_idx]).astype(np.int64)
+    rng.shuffle(sampled)
+    return sampled, int(max_maj)
+
+
+def sample_rare_events_full_indices(
+    y,
+    max_majority_samples: int | None,
+    random_state: int = 123,
+) -> tuple[np.ndarray, int]:
+    max_maj = FAST_MAX_MAJORITY_SAMPLES if max_majority_samples is None else int(max_majority_samples)
+    max_maj = min(max_maj, FAST_MAX_MAJORITY_SAMPLES)
+
+    indices = np.arange(len(y), dtype=np.int64)
+    pos_idx = indices[y == 1]
+    neg_idx = indices[y == 0]
+
+    rng = np.random.default_rng(random_state)
+    if len(neg_idx) > max_maj:
+        neg_idx = rng.choice(neg_idx, size=max_maj, replace=False)
+
+    sampled = np.concatenate([pos_idx, neg_idx]).astype(np.int64)
+    rng.shuffle(sampled)
+    return sampled, int(max_maj)
+
+
 def split_vectorized_dataset(X, y, eval_cfg: dict):
     idx_train, idx_val, idx_test = split_dataset_indices(y, eval_cfg)
     X_train = X[idx_train]
@@ -1337,15 +1380,9 @@ def train_with_automl(
     """
     Bucle AutoML simple:
       - num_trials = automl.max_trials
-      - en cada trial se muestrean hiperparámetros
-      - se entrena y se evalúa recall en validación
-      - se queda con el modelo con mejor recall_val
-
-    Devuelve:
-      - best_model
-      - best_hp (dict)
-      - best_val_recall (float)
-      - history (history.history del mejor modelo)
+      - en cada trial se muestrean hiperparametros
+      - se entrena y se evalua con threshold fijo 0.5 en validacion
+      - se queda con el modelo con mejor recall_val @0.5
     """
     enabled = bool(automl_cfg.get("enabled", True))
     max_trials = int(automl_cfg.get("max_trials", 5))
@@ -1353,6 +1390,7 @@ def train_with_automl(
 
     epochs = int(training_cfg.get("epochs", 10))
     max_samples = training_cfg.get("max_samples", None)
+    decision_threshold = 0.5
 
     rng = np.random.default_rng(seed)
     trials_summary = []
@@ -1362,7 +1400,6 @@ def train_with_automl(
 
     num_trials = max_trials if enabled else 1
 
-    # Si max_samples está definido, recortamos train
     if max_samples is not None:
         max_samples = int(max_samples)
         if max_samples < len(X_train):
@@ -1371,61 +1408,45 @@ def train_with_automl(
             y_train = y_train[idx]
 
     if not enabled:
-        print("[INFO] AutoML deshabilitado: se ejecutará 1 trial")
-
-        # Trial único con hiperparámetros "por defecto"
-        hp = sample_hyperparams(search_space, model_family, rng)
-        model = build_model(model_family, hp, aux)
-
-        print(
-            f"[INFO] trial 1/1 | family={model_family} | "
-            f"batch={int(hp.get('batch_size', 128))} | epochs={epochs}"
-        )
-
-        history = model.fit(
-            X_train,
-            y_train,
-            validation_data=(X_val, y_val),
-            epochs=epochs,
-            batch_size=int(hp.get("batch_size", 128)),
-            class_weight=class_weights,
-            verbose=0,
-        )
-        y_val_prob = sanitize_probabilities(model.predict(X_val, verbose=0).ravel(), "val")
-        y_val_pred = (y_val_prob >= 0.5).astype("int32")
-        val_recall = recall_score(y_val, y_val_pred, zero_division=0)
-
-        hp_native = convert_to_native_types(hp)
-        trial_result = {
-            "trial_id": 0,
-            "hyperparameters": hp_native,
-            "val_recall": float(val_recall),
-            "epochs": epochs,
-            "batch_size": int(hp.get("batch_size", 128)),
-        }
-        trials_summary.append(trial_result)
-
-        if experiments_dir is not None:
-            exp_dir = experiments_dir / "exp_000"
-            exp_dir.mkdir(parents=True, exist_ok=True)
-            model.save(exp_dir / "model.h5")
-            (exp_dir / "metrics.json").write_text(
-                json.dumps(trial_result, indent=2),
-                encoding="utf-8",
-            )
-
-        print(f"[INFO] trial 1/1 | val_recall={float(val_recall):.4f}")
-
-        return model, hp_native, float(val_recall), history.history, trials_summary, 0
+        print("[INFO] AutoML deshabilitado: se ejecutara 1 trial")
 
     best_model = None
     best_hp = None
     best_val_recall = -1.0
+    best_val_f1 = -1.0
     best_history = None
-
-    print(f"[INFO] AutoML habilitado: trials={num_trials}")
-
     best_trial_id = 0
+    best_by_f1 = None
+    best_by_precision = None
+    best_by_recall = None
+
+    def _candidate_for_output(metrics):
+        if metrics is None:
+            return None
+        return {
+            "f1": float(metrics["f1"]),
+            "recall": float(metrics["recall"]),
+            "precision": float(metrics["precision"]),
+        }
+
+    def _is_better_candidate(current, candidate, primary_key, tie_key):
+        if current is None:
+            return True
+        if candidate[primary_key] > current[primary_key]:
+            return True
+        return np.isclose(candidate[primary_key], current[primary_key]) and candidate[tie_key] > current[tie_key]
+
+    def _format_candidate_metrics(metrics):
+        if metrics is None:
+            return "null"
+        return (
+            f"f1={metrics['f1']:.4f}, "
+            f"recall={metrics['recall']:.4f}, "
+            f"precision={metrics['precision']:.4f}"
+        )
+
+    if enabled:
+        print(f"[INFO] AutoML habilitado: trials={num_trials}")
 
     for trial in range(num_trials):
         hp = sample_hyperparams(search_space, model_family, rng)
@@ -1447,14 +1468,34 @@ def train_with_automl(
         )
 
         y_val_prob = sanitize_probabilities(model.predict(X_val, verbose=0).ravel(), "val")
-        y_val_pred = (y_val_prob >= 0.5).astype("int32")
-        val_recall = recall_score(y_val, y_val_pred, zero_division=0)
+        val_metrics = compute_metrics_at_threshold(y_val, y_val_prob, decision_threshold)
+        val_precision = float(val_metrics["precision"])
+        val_recall = float(val_metrics["recall"])
+        val_f1 = float(val_metrics["f1"])
+
+        candidate_metrics = {
+            "f1": val_f1,
+            "recall": val_recall,
+            "precision": val_precision,
+        }
+        # Tie-breakers: F1/precision prefer recall; recall prefers F1.
+        if _is_better_candidate(best_by_f1, candidate_metrics, "f1", "recall"):
+            best_by_f1 = candidate_metrics
+        if _is_better_candidate(best_by_precision, candidate_metrics, "precision", "recall"):
+            best_by_precision = candidate_metrics
+        if _is_better_candidate(best_by_recall, candidate_metrics, "recall", "f1"):
+            best_by_recall = candidate_metrics
 
         hp_native = convert_to_native_types(hp)
         trial_result = {
             "trial_id": trial,
             "hyperparameters": hp_native,
-            "val_recall": float(val_recall),
+            "decision_threshold": float(decision_threshold),
+            "threshold_source": "fixed",
+            "threshold_policy": "fixed_0_5",
+            "val_precision": val_precision,
+            "val_recall": val_recall,
+            "val_f1": val_f1,
             "epochs": epochs,
             "batch_size": int(hp.get("batch_size", 128)),
         }
@@ -1469,20 +1510,35 @@ def train_with_automl(
                 encoding="utf-8",
             )
 
-        print(f"[INFO] trial {trial + 1}/{num_trials} | val_recall={float(val_recall):.4f}")
+        print(
+            f"[INFO] trial {trial + 1}/{num_trials} | "
+            f"val_precision={val_precision:.4f} | val_recall={val_recall:.4f} | "
+            f"val_f1={val_f1:.4f} | threshold={decision_threshold:.1f}"
+        )
 
-        if val_recall > best_val_recall:
-            best_val_recall = float(val_recall)
+        if val_recall > best_val_recall or (np.isclose(val_recall, best_val_recall) and val_f1 > best_val_f1):
+            best_val_recall = val_recall
+            best_val_f1 = val_f1
             best_model = model
             best_hp = hp_native
             best_history = history.history
             best_trial_id = trial
             print(
                 f"[INFO] Nuevo mejor trial: {best_trial_id} "
-                f"(val_recall={best_val_recall:.4f})"
+                f"(val_recall={best_val_recall:.4f}, val_f1={best_val_f1:.4f})"
             )
 
-    return best_model, best_hp, best_val_recall, best_history, trials_summary, best_trial_id
+    best_validation_candidates = {
+        "mejor_modelo_f1": _candidate_for_output(best_by_f1),
+        "mejor_modelo_precision": _candidate_for_output(best_by_precision),
+        "mejor_modelo_recall": _candidate_for_output(best_by_recall),
+    }
+    print("[INFO] Best validation candidates:")
+    print(f"  by_f1: {_format_candidate_metrics(best_validation_candidates['mejor_modelo_f1'])}")
+    print(f"  by_precision: {_format_candidate_metrics(best_validation_candidates['mejor_modelo_precision'])}")
+    print(f"  by_recall: {_format_candidate_metrics(best_validation_candidates['mejor_modelo_recall'])}")
+
+    return best_model, best_hp, best_val_recall, best_history, trials_summary, best_trial_id, best_validation_candidates
 
 
 def compute_optimal_thresholds(y_true, y_prob):
@@ -1509,6 +1565,50 @@ def compute_optimal_thresholds(y_true, y_prob):
         best_recall_threshold = 0.5
 
     return best_f1_threshold, best_recall_threshold
+
+
+
+def compute_metrics_at_threshold(y_true, y_prob, threshold: float) -> dict:
+    y_prob = sanitize_probabilities(y_prob, "metrics")
+    y_pred = (y_prob >= float(threshold)).astype("int32")
+    return {
+        "precision": float(precision_score(y_true, y_pred, zero_division=0)),
+        "recall": float(recall_score(y_true, y_pred, zero_division=0)),
+        "f1": float(f1_score(y_true, y_pred, zero_division=0)),
+    }
+
+
+def get_optional_int(*values):
+    for value in values:
+        if value is not None:
+            return int(value)
+    return None
+
+
+def stratified_cap_indices(indices, y_full, max_samples, seed: int):
+    if max_samples is None or int(max_samples) <= 0 or len(indices) <= int(max_samples):
+        return indices.astype(np.int64), False
+
+    max_samples = int(max_samples)
+    rng = np.random.default_rng(seed)
+    selected_parts = []
+    for label in np.unique(y_full[indices]):
+        label_idx = indices[y_full[indices] == label]
+        desired = int(round(max_samples * len(label_idx) / len(indices)))
+        desired = min(len(label_idx), max(1, desired))
+        selected_parts.append(rng.choice(label_idx, size=desired, replace=False))
+
+    selected = np.concatenate(selected_parts).astype(np.int64)
+    if len(selected) > max_samples:
+        selected = rng.choice(selected, size=max_samples, replace=False).astype(np.int64)
+    elif len(selected) < max_samples:
+        missing_pool = np.setdiff1d(indices, selected, assume_unique=False)
+        if len(missing_pool) > 0:
+            extra = rng.choice(missing_pool, size=min(max_samples - len(selected), len(missing_pool)), replace=False)
+            selected = np.concatenate([selected, extra]).astype(np.int64)
+
+    rng.shuffle(selected)
+    return selected.astype(np.int64), True
 
 
 def sanitize_probabilities(y_prob, context=""):
@@ -1634,6 +1734,9 @@ def write_non_trainable_outputs(
         },
         "metrics": {
             "execution_time": float(execution_time),
+            "mejor_modelo_f1": None,
+            "mejor_modelo_precision": None,
+            "mejor_modelo_recall": None,
             "n_train": 0,
             "n_val": 0,
             "n_test": 0,
@@ -1672,28 +1775,36 @@ def load_labeled_dataset_for_training(
     random_state: int = 123,
 ) -> pd.DataFrame:
     columns = [INPUT_SEQUENCE_COLUMN, label_col]
+    return pd.read_parquet(dataset_path, columns=columns)
 
-    if strategy != "rare_events":
-        return pd.read_parquet(dataset_path, columns=columns)
 
-    max_maj = FAST_MAX_MAJORITY_SAMPLES if max_majority_samples is None else int(max_majority_samples)
-    max_maj = min(max_maj, FAST_MAX_MAJORITY_SAMPLES)
-
-    labels = (
+def read_label_array_from_parquet(dataset_path, label_col: str) -> np.ndarray:
+    return (
         pq.read_table(dataset_path, columns=[label_col], memory_map=True)
         .column(0)
         .to_numpy(zero_copy_only=False)
+        .astype("int32")
     )
-    pos_indices = np.flatnonzero(labels == 1)
-    neg_indices = np.flatnonzero(labels == 0)
 
-    rng = np.random.default_rng(random_state)
-    if len(neg_indices) > max_maj:
-        neg_indices = rng.choice(neg_indices, size=max_maj, replace=False)
 
-    selected_indices = np.sort(np.concatenate([pos_indices, neg_indices]).astype(np.int64))
+def load_labeled_dataset_rows(
+    dataset_path,
+    label_col: str,
+    selected_indices: np.ndarray | None = None,
+) -> pd.DataFrame:
+    columns = [INPUT_SEQUENCE_COLUMN, label_col]
+    if selected_indices is None:
+        return pd.read_parquet(dataset_path, columns=columns)
+
+    selected_indices = np.asarray(selected_indices, dtype=np.int64)
     if selected_indices.size == 0:
         return pd.DataFrame(columns=columns)
+
+    order_by_index = pd.Series(
+        np.arange(selected_indices.size, dtype=np.int64),
+        index=selected_indices,
+    )
+    sorted_indices = np.sort(selected_indices)
 
     parquet_file = pq.ParquetFile(dataset_path, memory_map=True)
     frames = []
@@ -1703,16 +1814,25 @@ def load_labeled_dataset_for_training(
         batch_len = batch.num_rows
         batch_end = row_offset + batch_len
         start_cursor = cursor
-        while cursor < selected_indices.size and selected_indices[cursor] < batch_end:
+        while cursor < sorted_indices.size and sorted_indices[cursor] < batch_end:
             cursor += 1
         if cursor > start_cursor:
-            local_idx = selected_indices[start_cursor:cursor] - row_offset
-            frames.append(batch.take(pa.array(local_idx)).to_pandas())
+            global_idx = sorted_indices[start_cursor:cursor]
+            local_idx = global_idx - row_offset
+            frame = batch.take(pa.array(local_idx)).to_pandas()
+            frame["_source_index"] = global_idx
+            frames.append(frame)
         row_offset = batch_end
-        if cursor >= selected_indices.size:
+        if cursor >= sorted_indices.size:
             break
 
-    return pd.concat(frames, axis=0).sample(frac=1.0, random_state=random_state).reset_index(drop=True)
+    if not frames:
+        return pd.DataFrame(columns=columns)
+
+    df = pd.concat(frames, axis=0)
+    df["_order"] = df["_source_index"].map(order_by_index)
+    df = df.sort_values("_order").drop(columns=["_source_index", "_order"])
+    return df.reset_index(drop=True)
 
 
 def pad_numeric_sequences(sequences, max_len: int) -> np.ndarray:
@@ -1896,6 +2016,14 @@ def main():
     search_space = params.get("search_space", {})
     evaluation_cfg = params.get("evaluation", {})
     training_cfg = params.get("training", {})
+    val_max_samples = get_optional_int(
+        evaluation_cfg.get("val_max_samples"),
+        evaluation_cfg.get("max_val_samples"),
+    )
+    test_max_samples = get_optional_int(
+        evaluation_cfg.get("test_max_samples"),
+        evaluation_cfg.get("max_test_samples"),
+    )
     imbalance_cfg = params.get("imbalance", {})
     imbalance_strategy = params.get("imbalance_strategy")
     imbalance_max_majority = params.get("imbalance_max_majority_samples")
@@ -1914,34 +2042,33 @@ def main():
     configure_reproducibility(automl_seed, strict_cross_os=True)
     print(f"[INFO] reproducibility seed={automl_seed}, strict_cross_os=True")
 
+    strategy = imbalance_strategy
+    max_maj = imbalance_max_majority
+
     # ---------------------------------------------
     # 2. Cargar dataset etiquetado
     # ---------------------------------------------
     print(f"[INFO] Leyendo dataset etiquetado de F04: {dataset_path}")
-    df = load_labeled_dataset_for_training(
-        dataset_path,
-        label_col,
-        imbalance_strategy,
-        imbalance_max_majority,
-        random_state=123,
-    )
+    defer_full_dataset_load = strategy == "rare_events" and dedup_mode == "none"
+    if defer_full_dataset_load:
+        y_full_deferred = read_label_array_from_parquet(dataset_path, label_col)
+        df = None
+    else:
+        y_full_deferred = None
+        df = load_labeled_dataset_for_training(
+            dataset_path,
+            label_col,
+            imbalance_strategy,
+            imbalance_max_majority,
+            random_state=123,
+        )
 
-    if label_col not in df.columns:
+    if df is not None and label_col not in df.columns:
         raise RuntimeError(f"La columna de etiqueta '{label_col}' no está en el dataset")
     
 
-    dedup_stats = None
     if dedup_mode not in {"none", "all", "neg_only", "auto"}:
         raise ValueError(f"deduplication_mode no soportado: {dedup_mode}")
-
-    df, dedup_stats = deduplicate_labeled_windows(df, dedup_mode)
-
-    print(
-        f"[INFO] dedup={dedup_mode} -> effective={dedup_stats['dedup_mode_effective']} | "
-        f"before={dedup_stats['n_before']} | after={dedup_stats['n_after']} | "
-        f"removed={dedup_stats['n_removed']} ({dedup_stats['removed_ratio']:.4%})"
-    )
-
 
     # (Opcional) manejar imbalance de forma simple
     # Aquí solo aplicamos rare_events max_majority_samples
@@ -1952,28 +2079,8 @@ def main():
         if max_maj is None:
             max_maj = FAST_MAX_MAJORITY_SAMPLES
         max_maj = min(int(max_maj), FAST_MAX_MAJORITY_SAMPLES)
-    elif strategy == "rare_events" and max_maj is not None:
-        max_maj = min(int(max_maj), FAST_MAX_MAJORITY_SAMPLES)
-        pos = df[df[label_col] == 1]
-        neg = df[df[label_col] == 0]
-
-        if len(neg) > max_maj:
-            neg = neg.sample(n=max_maj, random_state=123)
-
-        df = pd.concat([pos, neg]).sample(frac=1.0, random_state=123)
-    elif strategy == "rare_events" and max_maj is None:
-        max_maj = FAST_MAX_MAJORITY_SAMPLES
-        pos = df[df[label_col] == 1]
-        neg = df[df[label_col] == 0]
-
-        if len(neg) > max_maj:
-            neg = neg.sample(n=max_maj, random_state=123)
-
-        df = pd.concat([pos, neg]).sample(frac=1.0, random_state=123)
-
-    if strategy == "rare_events":
         print(
-            f"[INFO] imbalance=rare_events, max_majority_samples={max_maj} "
+            f"[INFO] imbalance=rare_events aplicado solo a train, max_majority_samples={max_maj} "
             f"(cap={FAST_MAX_MAJORITY_SAMPLES})"
         )
 
@@ -1984,7 +2091,6 @@ def main():
     variant_dir.mkdir(parents=True, exist_ok=True)
 
     training_dataset_path = variant_dir / "05_modeling_training_dataset.parquet"
-    df.to_parquet(training_dataset_path)
 
     parent_dataset_snapshot_path = variant_dir / "05_modeling_parent_dataset.parquet"
     if dataset_path.resolve() != parent_dataset_snapshot_path.resolve():
@@ -1992,21 +2098,18 @@ def main():
 
     print(f"[INFO] dataset_parent={dataset_path}")
     print(f"[INFO] dataset_parent_snapshot={parent_dataset_snapshot_path}")
-    print(f"[INFO] dataset_training_used={training_dataset_path}")
 
     # ---------------------------------------------
     # 3. Vectorización por familia + splits train/val/test
     # ---------------------------------------------
-    print(f"[INFO] Vectorizing dataset for model family '{model_family}'...")
-    X, y, vectorization_info = vectorize_for_family(
-        df,
-        label_col,
-        model_family,
-    )
-    print(f"[INFO] Vectorization complete: X.shape={X.shape}, y.shape={y.shape}")
-    label_distribution = summarize_label_distribution(y)
-    split_incompatibility = explain_split_incompatibility(y)
+    y_full = y_full_deferred if defer_full_dataset_load else df[label_col].astype("int32").values
+    label_distribution = summarize_label_distribution(y_full)
+    split_incompatibility = explain_split_incompatibility(y_full)
     if split_incompatibility is not None:
+        if df is None:
+            df = load_labeled_dataset_rows(dataset_path, label_col)
+        df.to_parquet(training_dataset_path)
+        print(f"[INFO] dataset_training_used={training_dataset_path}")
         write_non_trainable_outputs(
             variant_dir=variant_dir,
             variant=variant,
@@ -2025,8 +2128,12 @@ def main():
         return
 
     try:
-        idx_train, idx_val, idx_test = split_dataset_indices(y, evaluation_cfg)
+        idx_train_full, idx_val_full, idx_test_full = split_dataset_indices(y_full, evaluation_cfg)
     except ValueError as exc:
+        if df is None:
+            df = load_labeled_dataset_rows(dataset_path, label_col)
+        df.to_parquet(training_dataset_path)
+        print(f"[INFO] dataset_training_used={training_dataset_path}")
         write_non_trainable_outputs(
             variant_dir=variant_dir,
             variant=variant,
@@ -2045,6 +2152,86 @@ def main():
         return
 
     print(f"[INFO] Split indices generated successfully")
+    val_positive_ratio_before = float(y_full[idx_val_full].mean()) if len(idx_val_full) else 0.0
+    test_positive_ratio_before = float(y_full[idx_test_full].mean()) if len(idx_test_full) else 0.0
+    idx_val_full, val_cap_used = stratified_cap_indices(idx_val_full, y_full, val_max_samples, automl_seed + 101)
+    idx_test_full, test_cap_used = stratified_cap_indices(idx_test_full, y_full, test_max_samples, automl_seed + 202)
+    val_positive_ratio_after = float(y_full[idx_val_full].mean()) if len(idx_val_full) else 0.0
+    test_positive_ratio_after = float(y_full[idx_test_full].mean()) if len(idx_test_full) else 0.0
+    if val_cap_used:
+        print(
+            f"[INFO] Validation cap estratificado aplicado: n={len(idx_val_full)}, "
+            f"positive_ratio {val_positive_ratio_before:.4f}->{val_positive_ratio_after:.4f}"
+        )
+    if test_cap_used:
+        print(
+            f"[INFO] Test cap estratificado aplicado: n={len(idx_test_full)}, "
+            f"positive_ratio {test_positive_ratio_before:.4f}->{test_positive_ratio_after:.4f}"
+        )
+
+    if df is None:
+        dedup_stats = {
+            "dedup_mode_effective": "none",
+            "n_before": int(len(idx_train_full)),
+            "n_after": int(len(idx_train_full)),
+            "n_removed": 0,
+            "removed_ratio": 0.0,
+            "n_ambiguous_sequences_removed": 0,
+            "n_ambiguous_rows_removed": 0,
+            "n_majority_resolved_sequences": 0,
+        }
+        idx_train_fit = idx_train_full
+    else:
+        df_train_full = df.iloc[idx_train_full].copy()
+        df_train_full["_original_index"] = idx_train_full
+        df_train_fit, dedup_stats = deduplicate_labeled_windows(df_train_full, dedup_mode)
+        idx_train_fit = df_train_fit["_original_index"].to_numpy(dtype=np.int64)
+
+    print(
+        f"[INFO] dedup={dedup_mode} aplicado solo a train -> "
+        f"effective={dedup_stats['dedup_mode_effective']} | "
+        f"before={dedup_stats['n_before']} | after={dedup_stats['n_after']} | "
+        f"removed={dedup_stats['n_removed']} ({dedup_stats['removed_ratio']:.4%})"
+    )
+
+    if strategy == "rare_events":
+        idx_train_fit, max_maj = apply_rare_events_to_train_indices(
+            y_full,
+            idx_train_fit,
+            max_maj,
+            random_state=123,
+        )
+
+    selected_indices = np.concatenate([idx_train_fit, idx_val_full, idx_test_full]).astype(np.int64)
+    if df is None:
+        df_model = load_labeled_dataset_rows(dataset_path, label_col, selected_indices)
+    else:
+        df_model = df.iloc[selected_indices].reset_index(drop=True)
+    df_model.to_parquet(training_dataset_path)
+    print(f"[INFO] dataset_training_used={training_dataset_path}")
+
+    n_train_fit = len(idx_train_fit)
+    n_val = len(idx_val_full)
+    n_test = len(idx_test_full)
+    idx_train = np.arange(0, n_train_fit, dtype=np.int64)
+    idx_val = np.arange(n_train_fit, n_train_fit + n_val, dtype=np.int64)
+    idx_test = np.arange(n_train_fit + n_val, n_train_fit + n_val + n_test, dtype=np.int64)
+
+    print(
+        f"[INFO] Split sizes before train sampling: "
+        f"train={len(idx_train_full)}, val={n_val}, test={n_test}"
+    )
+    if strategy == "rare_events":
+        print(f"[INFO] Train after rare_events sampling: train={n_train_fit}")
+
+    print(f"[INFO] Vectorizing dataset for model family '{model_family}'...")
+    X, y, vectorization_info = vectorize_for_family(
+        df_model,
+        label_col,
+        model_family,
+    )
+    print(f"[INFO] Vectorization complete: X.shape={X.shape}, y.shape={y.shape}")
+
     X_train = X[idx_train]
     y_train = y[idx_train]
     X_val = X[idx_val]
@@ -2055,8 +2242,8 @@ def main():
     print(f"[INFO] Split sizes: train={len(y_train)}, val={len(y_val)}, test={len(y_test)}")
     print(f"[INFO] Starting leakage detection analysis (this may take a few minutes for large datasets)...")
     leakage_report = build_split_leakage_report(
-        df["OW_values"],
-        df[label_col],
+        df_model["OW_values"],
+        df_model[label_col],
         {
             "train": idx_train,
             "val": idx_val,
@@ -2078,7 +2265,7 @@ def main():
     print(f"[INFO] Starting AutoML training...")
     experiments_dir = variant_dir / "experiments"
 
-    best_model, best_hp, best_val_recall, history, trials_summary, best_trial_id = train_with_automl(
+    best_model, best_hp, best_val_recall, history, trials_summary, best_trial_id, best_validation_candidates = train_with_automl(
         X_train,
         y_train,
         X_val,
@@ -2097,24 +2284,30 @@ def main():
     # 5. Evaluación final en test + thresholds
     # ---------------------------------------------
     print(f"[INFO] Evaluating on test set...")
+    decision_threshold = 0.5
+    threshold_source = "fixed"
+    threshold_policy = "fixed_0_5"
+
+    y_val_prob = sanitize_probabilities(best_model.predict(X_val, verbose=0).ravel(), "val_final")
+    val_metrics = compute_metrics_at_threshold(y_val, y_val_prob, decision_threshold)
+    val_precision = float(val_metrics["precision"])
+    val_recall = float(val_metrics["recall"])
+    val_f1 = float(val_metrics["f1"])
+
     y_test_prob = sanitize_probabilities(best_model.predict(X_test, verbose=0).ravel(), "test")
-
-    # Umbral base 0.5
-    y_test_pred05 = (y_test_prob >= 0.5).astype("int32")
-    test_precision = precision_score(y_test, y_test_pred05, zero_division=0)
-    test_recall = recall_score(y_test, y_test_pred05, zero_division=0)
-    test_f1 = f1_score(y_test, y_test_pred05, zero_division=0)
-    cm = confusion_matrix(y_test, y_test_pred05, labels=[0, 1])
+    y_test_pred = (y_test_prob >= decision_threshold).astype("int32")
+    test_precision = precision_score(y_test, y_test_pred, zero_division=0)
+    test_recall = recall_score(y_test, y_test_pred, zero_division=0)
+    test_f1 = f1_score(y_test, y_test_pred, zero_division=0)
+    cm = confusion_matrix(y_test, y_test_pred, labels=[0, 1])
     tn, fp, fn, tp = [int(v) for v in cm.ravel()]
-
-    best_f1_thr, best_recall_thr = compute_optimal_thresholds(y_test, y_test_prob)
 
     execution_time = float(time.perf_counter() - start_time)
 
-    print(f"[INFO] best_val_recall={best_val_recall:.4f}")
-    print(f"[INFO] test_precision@0.5={test_precision:.4f}, test_recall@0.5={test_recall:.4f}, test_f1@0.5={test_f1:.4f}")
+    print(f"[INFO] decision_threshold={decision_threshold:.1f} ({threshold_policy})")
+    print(f"[INFO] val_precision={val_precision:.4f}, val_recall={val_recall:.4f}, val_f1={val_f1:.4f}")
+    print(f"[INFO] test_precision={test_precision:.4f}, test_recall={test_recall:.4f}, test_f1={test_f1:.4f}")
     print(f"[INFO] confusion@0.5: tp={tp}, tn={tn}, fp={fp}, fn={fn}")
-    print(f"[INFO] best_f1_threshold={best_f1_thr:.4f}, best_recall_threshold={best_recall_thr:.4f}")
     print(f"[INFO] execution_time={execution_time:.1f}s")
 
     # ---------------------------------------------
@@ -2165,8 +2358,10 @@ def main():
       </ul>
       <h2>AutoML</h2>
       <pre>{json.dumps(best_hp, indent=2)}</pre>
-      <h2>Validation</h2>
-      <p>best_val_recall = {best_val_recall:.4f}</p>
+      <h2>Validation @0.5</h2>
+      <p>val_precision = {val_precision:.4f}</p>
+      <p>val_recall = {val_recall:.4f}</p>
+      <p>val_f1 = {val_f1:.4f}</p>
       <h2>Test @0.5</h2>
       <ul>
         <li>precision = {test_precision:.4f}</li>
@@ -2177,10 +2372,11 @@ def main():
                 <li>fp = {fp}</li>
                 <li>fn = {fn}</li>
       </ul>
-      <h2>Thresholds</h2>
+      <h2>Threshold</h2>
       <ul>
-        <li>best_f1_threshold = {best_f1_thr:.4f}</li>
-        <li>best_recall_threshold = {best_recall_thr:.4f}</li>
+        <li>decision_threshold = {decision_threshold:.1f}</li>
+        <li>threshold_source = {threshold_source}</li>
+        <li>threshold_policy = {threshold_policy}</li>
       </ul>
       <h2>Split Leakage Audit</h2>
       <ul>
@@ -2241,10 +2437,13 @@ def main():
             "trainable": True,
             "possible_split_leakage": bool(leakage_report["possible_leakage"]),
             "high_split_leakage_warning": bool(leakage_report["high_leakage_warning"]),
-            "decision_threshold": float(best_f1_thr),
-            "best_f1_threshold": float(best_f1_thr),
-            "best_recall_threshold": float(best_recall_thr),
-            "best_val_recall": float(best_val_recall),
+            "decision_threshold": float(decision_threshold),
+            "threshold_source": str(threshold_source),
+            "threshold_policy": str(threshold_policy),
+            "best_val_recall": float(val_recall),
+            "val_precision": float(val_precision),
+            "val_recall": float(val_recall),
+            "val_f1": float(val_f1),
             "test_precision": float(test_precision),
             "test_recall": float(test_recall),
             "test_f1": float(test_f1),
@@ -2255,6 +2454,9 @@ def main():
         },
         "metrics": {
             "execution_time": float(execution_time),
+            "mejor_modelo_f1": best_validation_candidates.get("mejor_modelo_f1"),
+            "mejor_modelo_precision": best_validation_candidates.get("mejor_modelo_precision"),
+            "mejor_modelo_recall": best_validation_candidates.get("mejor_modelo_recall"),
             "n_train": int(len(y_train)),
             "n_val": int(len(y_val)),
             "n_test": int(len(y_test)),
@@ -2280,6 +2482,16 @@ def main():
             "positive_ratio_train": float(y_train.mean()),
             "positive_ratio_val": float(y_val.mean()),
             "positive_ratio_test": float(y_test.mean()),
+            "val_positive_ratio": float(y_val.mean()),
+            "test_positive_ratio": float(y_test.mean()),
+            "val_cap_used": bool(val_cap_used),
+            "test_cap_used": bool(test_cap_used),
+            "val_max_samples": int(val_max_samples) if val_max_samples is not None else None,
+            "test_max_samples": int(test_max_samples) if test_max_samples is not None else None,
+            "val_positive_ratio_before": float(val_positive_ratio_before),
+            "val_positive_ratio_after": float(val_positive_ratio_after),
+            "test_positive_ratio_before": float(test_positive_ratio_before),
+            "test_positive_ratio_after": float(test_positive_ratio_after),
             "tp": int(tp),
             "tn": int(tn),
             "fp": int(fp),
@@ -2288,6 +2500,10 @@ def main():
             "n_samples_after_dedup": int(dedup_stats["n_after"]),
             "n_removed_by_dedup": int(dedup_stats["n_removed"]),
             "removed_ratio_by_dedup": float(dedup_stats["removed_ratio"]),
+            "train_n_samples_before_dedup": int(dedup_stats["n_before"]),
+            "train_n_samples_after_dedup": int(dedup_stats["n_after"]),
+            "train_n_removed_by_dedup": int(dedup_stats["n_removed"]),
+            "train_removed_ratio_by_dedup": float(dedup_stats["removed_ratio"]),
         },
         "provenance": {
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -2299,7 +2515,9 @@ def main():
             "experiment_name": f"F05_{prediction_name}",
             "run_name": f"{prediction_name}__{variant}",
             "metrics": {
-                "val_recall": float(best_val_recall),
+                "val_precision": float(val_precision),
+                "val_recall": float(val_recall),
+                "val_f1": float(val_f1),
                 "test_precision": float(test_precision),
                 "test_recall": float(test_recall),
                 "test_f1": float(test_f1),
@@ -2311,6 +2529,9 @@ def main():
             "params": {
                 **convert_to_native_types(best_hp),
                 "model_family": model_family,
+                "decision_threshold": float(decision_threshold),
+                "threshold_source": str(threshold_source),
+                "threshold_policy": str(threshold_policy),
             },
             "artifacts": [
                 str(model_path),

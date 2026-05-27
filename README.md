@@ -47,7 +47,7 @@ El flujo actual F01-F04 trabaja con una serie temporal univariable:
 1. F01 explora y limpia el dataset bruto.
 2. F02 selecciona una medida y genera `02_series.parquet`.
 3. F03 construye ventanas `OW_values` y `PW_values`.
-4. F04 etiqueta cada ventana usando un umbral sobre los valores de prediccion.
+4. F04 etiqueta cada ventana usando un umbral sobre los valores de prediccion o, si se trabaja con eventos binarios, una regla de transicion.
 
 El umbral de F04 es un porcentaje entre el minimo y el maximo de la medida exportados por F02:
 
@@ -57,6 +57,14 @@ threshold_value = min + (threshold / 100) * (max - min)
 
 Con `DIRECTION=high`, la etiqueta es 1 si algun valor de `PW_values` supera el umbral.  
 Con `DIRECTION=low`, la etiqueta es 1 si algun valor de `PW_values` queda por debajo del umbral.
+
+Cuando `EVENT_STRATEGY=transitions`, F04 no recalcula umbrales sobre eventos ya binarios. La etiqueta vale 1 solo si el ultimo evento de la ventana de observacion es 0 y en la ventana de prediccion aparece al menos un 1:
+
+```text
+label = last(OW_events) == 0 AND any(PW_events == 1)
+```
+
+Las ventanas vacias se etiquetan como 0.
 
 ## Ejemplo F01-F04
 
@@ -117,8 +125,16 @@ make check4 VARIANT=v4_0000
 make register4 VARIANT=v4_0000
 ```
 
+Para eventos binarios por transicion:
+
+```bash
+make variant4 VARIANT=v4_0000 PARENT=v3_0000 EVENT_STRATEGY=transitions NAME=event_transition_0_to_1
+make script4 VARIANT=v4_0000
+```
+
 Parametros:
 
+- `EVENT_STRATEGY`: `threshold` por defecto, o `transitions` para eventos binarios
 - `THRESHOLD`: porcentaje entre 0 y 100 del rango min-max de F02
 - `DIRECTION`: `high` o `low`
 - `NAME`: nombre opcional del objetivo
@@ -206,7 +222,7 @@ Los artefactos grandes se registran mediante DVC cuando ejecutas `make registerN
 - Usa variantes canonicas como `v1_0000`, `v2_0000`, etc.
 - Las formas cortas como `VARIANT=0` tambien se normalizan segun la fase.
 - F02 ya no genera catalogos de eventos.
-- F03 y F04 ya no usan `OW_events`, `PW_events` ni reglas OR sobre eventos.
+- F04 conserva el etiquetado numerico por umbral y tambien soporta `OW_events`/`PW_events` binarios con regla de transicion 0->1. Ya no etiqueta positivo por la mera presencia de cualquier evento en `PW_events`.
 
 ## Cambios Realizados Desde el Inicio del Repositorio Git
 
@@ -270,9 +286,9 @@ El porcentaje se convierte en un valor real usando el minimo y maximo calculados
 threshold_value = min + (threshold / 100) * (max - min)
 ```
 
-Con `DIRECTION=high`, la etiqueta vale 1 si algun valor de la ventana de prediccion supera el umbral. Con `DIRECTION=low`, vale 1 si algun valor queda por debajo.
+Con `DIRECTION=high`, la etiqueta vale 1 si algun valor de la ventana de prediccion supera el umbral. Con `DIRECTION=low`, vale 1 si algun valor queda por debajo. En `EVENT_STRATEGY=transitions`, la etiqueta vale 1 solo cuando `last(OW_events) == 0` y `any(PW_events == 1)`; si `OW_events` o `PW_events` estan vacias, devuelve 0.
 
-Tambien se ha hecho el etiquetado por lotes con PyArrow. Esto evita cargar todo el parquet completo en memoria cuando el dataset es grande. La salida principal sigue siendo `04_targets.parquet`, pero ahora contiene `OW_values` y `label`.
+Tambien se ha hecho el etiquetado por lotes con PyArrow. Esto evita cargar todo el parquet completo en memoria cuando el dataset es grande. La salida principal sigue siendo `04_targets.parquet`; en modo numerico contiene `OW_values` y `label`, y en modo transiciones conserva `OW_events` y `label`.
 
 ### F05: entrenamiento con secuencias numericas
 
