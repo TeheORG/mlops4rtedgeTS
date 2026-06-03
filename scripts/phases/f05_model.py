@@ -18,6 +18,7 @@ Este código está diseñado para:
 """
 
 import argparse
+import gc
 import json
 import time
 from datetime import datetime, timezone
@@ -37,6 +38,7 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
     f1_score,
+    average_precision_score,
     precision_recall_curve,
 )
 from sklearn.model_selection import train_test_split
@@ -58,6 +60,8 @@ from scripts.core.traceability import validate_outputs
 PHASE = "f05_modeling"
 PARENT_PHASE = "f04_targets"
 FAST_MAX_MAJORITY_SAMPLES = 20_000
+DEFAULT_THRESHOLD_POLICY = "optimal_f2"
+DEFAULT_CNN1D_EVAL_MAX_SAMPLES = 25_000
 INPUT_SEQUENCE_COLUMN = "OW_values"
 
 # ── Análisis opcionales (desactivar para acelerar ejecución) ──────────────────
@@ -69,6 +73,13 @@ ENABLE_NEAR_DUPLICATE_ANALYSIS     = False  # O(n²) Jaccard, muy lento en datas
 def build_adam_optimizer(learning_rate: float):
     # Ruta única para todos los OS: evita divergencias por elegir optimizadores distintos.
     return tf.keras.optimizers.Adam(learning_rate=learning_rate)
+
+
+def gpu_safeguards_enabled() -> bool:
+    try:
+        return bool(tf.config.list_physical_devices("GPU"))
+    except Exception:
+        return False
 
 
 def configure_reproducibility(seed: int, strict_cross_os: bool = False):
@@ -1061,6 +1072,29 @@ def build_split_leakage_report(
     }
 
 
+def build_skipped_leakage_report() -> dict:
+    skipped = {
+        "skipped": True,
+        "possible_leakage": False,
+        "high_leakage_warning": False,
+        "max_overlap_pct": 0.0,
+    }
+    skipped_near = {
+        "skipped": True,
+        "n_total_pairs": 0,
+        "max_similarity": 0.0,
+        "pairwise": {},
+    }
+    return {
+        "exact_duplicates": dict(skipped),
+        "unordered_duplicates": dict(skipped),
+        "near_duplicates": skipped_near,
+        "possible_leakage": False,
+        "high_leakage_warning": False,
+        "max_overlap_pct": 0.0,
+    }
+
+
 def print_overlap_section(section_name: str, section: dict) -> None:
     if section.get("skipped"):
         print(f"[INFO] Leakage audit: {section_name} — skipped")
@@ -1374,6 +1408,7 @@ def train_with_automl(
     search_space: dict,
     automl_cfg: dict,
     training_cfg: dict,
+    threshold_cfg: dict | None = None,
     class_weights=None,
     experiments_dir=None,
 ):
@@ -1387,10 +1422,17 @@ def train_with_automl(
     enabled = bool(automl_cfg.get("enabled", True))
     max_trials = int(automl_cfg.get("max_trials", 5))
     seed = int(automl_cfg.get("seed", 42))
+    use_gpu_safeguards = gpu_safeguards_enabled()
 
     epochs = int(training_cfg.get("epochs", 10))
     max_samples = training_cfg.get("max_samples", None)
-    decision_threshold = 0.5
+    threshold_cfg = threshold_cfg or {}
+    threshold_policy = str(
+        threshold_cfg.get(
+            "policy",
+            training_cfg.get("threshold_policy", automl_cfg.get("threshold_policy", DEFAULT_THRESHOLD_POLICY)),
+        )
+    )
 
     rng = np.random.default_rng(seed)
     trials_summary = []
@@ -1399,6 +1441,12 @@ def train_with_automl(
         experiments_dir.mkdir(parents=True, exist_ok=True)
 
     num_trials = max_trials if enabled else 1
+    if use_gpu_safeguards and model_family == "cnn1d" and int(aux.get("max_len", 0)) >= 256 and num_trials > 2:
+        print(
+            "[INFO] cnn1d long sequence detected "
+            f"(max_len={int(aux.get('max_len', 0))}); limiting AutoML to 2 trials to avoid GPU OOM"
+        )
+        num_trials = 2
 
     if max_samples is not None:
         max_samples = int(max_samples)
@@ -1411,6 +1459,7 @@ def train_with_automl(
         print("[INFO] AutoML deshabilitado: se ejecutara 1 trial")
 
     best_model = None
+    best_model_path = None
     best_hp = None
     best_val_recall = -1.0
     best_val_f1 = -1.0
@@ -1449,29 +1498,46 @@ def train_with_automl(
         print(f"[INFO] AutoML habilitado: trials={num_trials}")
 
     for trial in range(num_trials):
+        tf.keras.backend.clear_session()
+        gc.collect()
         hp = sample_hyperparams(search_space, model_family, rng)
         model = build_model(model_family, hp, aux)
+        exp_model_path = None
+        requested_batch_size = int(hp.get("batch_size", 128))
+        effective_batch_size = min(requested_batch_size, 64) if use_gpu_safeguards and model_family == "cnn1d" else requested_batch_size
 
         print(
             f"[INFO] trial {trial + 1}/{num_trials} | family={model_family} | "
-            f"batch={int(hp.get('batch_size', 128))} | epochs={epochs}"
+            f"batch={effective_batch_size} | epochs={epochs}"
         )
+        if effective_batch_size != requested_batch_size:
+            print(
+                f"[INFO] trial {trial + 1}/{num_trials} | "
+                f"requested_batch={requested_batch_size} capped_to={effective_batch_size} for {model_family}"
+            )
 
         history = model.fit(
             X_train,
             y_train,
             validation_data=(X_val, y_val),
             epochs=epochs,
-            batch_size=int(hp.get("batch_size", 128)),
+            batch_size=effective_batch_size,
             class_weight=class_weights,
             verbose=0,
         )
 
-        y_val_prob = sanitize_probabilities(model.predict(X_val, verbose=0).ravel(), "val")
+        y_val_prob = sanitize_probabilities(model.predict(X_val, batch_size=effective_batch_size, verbose=0).ravel(), "val")
+        trial_threshold_info = compute_optimal_threshold(
+            y_val,
+            y_val_prob,
+            policy=threshold_policy,
+        )
+        decision_threshold = float(trial_threshold_info["threshold"])
         val_metrics = compute_metrics_at_threshold(y_val, y_val_prob, decision_threshold)
         val_precision = float(val_metrics["precision"])
         val_recall = float(val_metrics["recall"])
         val_f1 = float(val_metrics["f1"])
+        val_pr_auc = float(average_precision_score(y_val, y_val_prob))
 
         candidate_metrics = {
             "f1": val_f1,
@@ -1491,20 +1557,25 @@ def train_with_automl(
             "trial_id": trial,
             "hyperparameters": hp_native,
             "decision_threshold": float(decision_threshold),
-            "threshold_source": "fixed",
-            "threshold_policy": "fixed_0_5",
+            "threshold_source": str(trial_threshold_info["source"]),
+            "threshold_policy": str(threshold_policy),
+            "threshold_metric": str(trial_threshold_info["metric"]),
+            "threshold_warning": trial_threshold_info.get("warning"),
             "val_precision": val_precision,
             "val_recall": val_recall,
             "val_f1": val_f1,
+            "val_pr_auc": val_pr_auc,
             "epochs": epochs,
-            "batch_size": int(hp.get("batch_size", 128)),
+            "batch_size": effective_batch_size,
+            "requested_batch_size": requested_batch_size,
         }
         trials_summary.append(trial_result)
 
         if experiments_dir is not None:
             exp_dir = experiments_dir / f"exp_{trial:03d}"
             exp_dir.mkdir(parents=True, exist_ok=True)
-            model.save(exp_dir / "model.h5")
+            exp_model_path = exp_dir / "model.h5"
+            model.save(exp_model_path)
             (exp_dir / "metrics.json").write_text(
                 json.dumps(trial_result, indent=2),
                 encoding="utf-8",
@@ -1513,13 +1584,16 @@ def train_with_automl(
         print(
             f"[INFO] trial {trial + 1}/{num_trials} | "
             f"val_precision={val_precision:.4f} | val_recall={val_recall:.4f} | "
-            f"val_f1={val_f1:.4f} | threshold={decision_threshold:.1f}"
+            f"val_f1={val_f1:.4f} | threshold={decision_threshold:.6f}"
         )
 
         if val_recall > best_val_recall or (np.isclose(val_recall, best_val_recall) and val_f1 > best_val_f1):
             best_val_recall = val_recall
             best_val_f1 = val_f1
-            best_model = model
+            best_model_path = exp_model_path
+            if best_model_path is None:
+                best_model = tf.keras.models.clone_model(model)
+                best_model.set_weights(model.get_weights())
             best_hp = hp_native
             best_history = history.history
             best_trial_id = trial
@@ -1527,6 +1601,15 @@ def train_with_automl(
                 f"[INFO] Nuevo mejor trial: {best_trial_id} "
                 f"(val_recall={best_val_recall:.4f}, val_f1={best_val_f1:.4f})"
             )
+
+        del y_val_prob
+        del history
+        del model
+        tf.keras.backend.clear_session()
+        gc.collect()
+
+    if best_model_path is not None:
+        best_model = tf.keras.models.load_model(best_model_path, compile=False)
 
     best_validation_candidates = {
         "mejor_modelo_f1": _candidate_for_output(best_by_f1),
@@ -1541,31 +1624,87 @@ def train_with_automl(
     return best_model, best_hp, best_val_recall, best_history, trials_summary, best_trial_id, best_validation_candidates
 
 
-def compute_optimal_thresholds(y_true, y_prob):
-    """
-    Calcula:
-      - threshold por F1 (global)
-      - threshold por recall>=target_recall con máxima precisión
-    """
-    y_prob = sanitize_probabilities(y_prob, "threshold")
-    precisions, recalls, thresholds = precision_recall_curve(y_true, y_prob)
+def compute_optimal_threshold(
+    y_true,
+    y_prob,
+    *,
+    policy: str = "fixed_0_5",
+    default_threshold: float = 0.5,
+) -> dict:
+    """Select a decision threshold using validation data only."""
+    policy = str(policy or "fixed_0_5")
+    y_true = np.asarray(y_true).astype("int32")
+    y_prob = sanitize_probabilities(y_prob, "threshold_selection")
 
-    # Para F1
-    f1_scores = 2 * (precisions * recalls) / (precisions + recalls + 1e-8)
-    best_f1_idx = int(np.argmax(f1_scores))
-    best_f1_threshold = float(thresholds[best_f1_idx]) if best_f1_idx < len(thresholds) else 0.5
+    def _fixed_result(warning=None):
+        metrics = compute_metrics_at_threshold(y_true, y_prob, default_threshold)
+        return {
+            "threshold": float(default_threshold),
+            "policy": policy,
+            "source": "fixed",
+            "metric": "fixed",
+            "warning": warning,
+            **metrics,
+        }
 
-    # Para recall objetivo (ejemplo: 0.9)
-    target_recall = 0.9
-    idx = np.where(recalls >= target_recall)[0]
-    if len(idx) > 0:
-        best_idx = idx[np.argmax(precisions[idx])]
-        best_recall_threshold = float(thresholds[best_idx]) if best_idx < len(thresholds) else 0.5
-    else:
-        best_recall_threshold = 0.5
+    if policy == "fixed_0_5":
+        return _fixed_result()
 
-    return best_f1_threshold, best_recall_threshold
+    if policy != "optimal_f2":
+        raise ValueError(f"threshold policy no soportada: {policy}")
 
+    if y_true.size == 0 or y_prob.size == 0 or len(np.unique(y_true)) < 2:
+        warning = "optimal_f2_fallback_fixed_0_5:empty_or_single_class_validation"
+        print(f"[WARN] {warning}")
+        return _fixed_result(warning=warning)
+
+    candidate_thresholds = np.unique(y_prob[np.isfinite(y_prob)])
+    if candidate_thresholds.size == 0:
+        warning = "optimal_f2_fallback_fixed_0_5:no_candidate_thresholds"
+        print(f"[WARN] {warning}")
+        return _fixed_result(warning=warning)
+
+    best = None
+    beta2 = 4.0
+    for threshold in candidate_thresholds:
+        metrics = compute_metrics_at_threshold(y_true, y_prob, float(threshold))
+        precision = float(metrics["precision"])
+        recall = float(metrics["recall"])
+        denom = beta2 * precision + recall
+        f2 = 0.0 if denom <= 0 else (1.0 + beta2) * precision * recall / denom
+        candidate = {
+            "threshold": float(threshold),
+            "f2": float(f2),
+            **metrics,
+        }
+        if best is None:
+            best = candidate
+            continue
+        if candidate["f2"] > best["f2"]:
+            best = candidate
+            continue
+        if np.isclose(candidate["f2"], best["f2"]):
+            if candidate["recall"] > best["recall"]:
+                best = candidate
+            elif np.isclose(candidate["recall"], best["recall"]) and candidate["threshold"] < best["threshold"]:
+                best = candidate
+
+    if best is None:
+        warning = "optimal_f2_fallback_fixed_0_5:no_valid_candidate"
+        print(f"[WARN] {warning}")
+        return _fixed_result(warning=warning)
+
+    return {
+        "threshold": float(best["threshold"]),
+        "policy": policy,
+        "source": "validation",
+        "metric": "f2",
+        "warning": None,
+        "f2": float(best["f2"]),
+        "precision": float(best["precision"]),
+        "recall": float(best["recall"]),
+        "f1": float(best["f1"]),
+    }
 
 
 def compute_metrics_at_threshold(y_true, y_prob, threshold: float) -> dict:
@@ -2016,6 +2155,7 @@ def main():
     search_space = params.get("search_space", {})
     evaluation_cfg = params.get("evaluation", {})
     training_cfg = params.get("training", {})
+    threshold_cfg = params.get("threshold", {})
     val_max_samples = get_optional_int(
         evaluation_cfg.get("val_max_samples"),
         evaluation_cfg.get("max_val_samples"),
@@ -2024,6 +2164,15 @@ def main():
         evaluation_cfg.get("test_max_samples"),
         evaluation_cfg.get("max_test_samples"),
     )
+    use_gpu_safeguards = gpu_safeguards_enabled()
+    print(f"[INFO] gpu_safeguards_enabled={use_gpu_safeguards}")
+    if use_gpu_safeguards and model_family == "cnn1d":
+        if val_max_samples is None:
+            val_max_samples = DEFAULT_CNN1D_EVAL_MAX_SAMPLES
+            print(f"[INFO] cnn1d default val_max_samples={val_max_samples}")
+        if test_max_samples is None:
+            test_max_samples = DEFAULT_CNN1D_EVAL_MAX_SAMPLES
+            print(f"[INFO] cnn1d default test_max_samples={test_max_samples}")
     imbalance_cfg = params.get("imbalance", {})
     imbalance_strategy = params.get("imbalance_strategy")
     imbalance_max_majority = params.get("imbalance_max_majority_samples")
@@ -2044,12 +2193,18 @@ def main():
 
     strategy = imbalance_strategy
     max_maj = imbalance_max_majority
+    if use_gpu_safeguards and model_family == "cnn1d" and strategy == "rare_events" and dedup_mode != "none":
+        print(
+            f"[WARN] dedup={dedup_mode} requires loading full TS windows; "
+            "using effective dedup=none for cnn1d rare_events to avoid OOM"
+        )
+        dedup_mode = "none"
 
     # ---------------------------------------------
     # 2. Cargar dataset etiquetado
     # ---------------------------------------------
     print(f"[INFO] Leyendo dataset etiquetado de F04: {dataset_path}")
-    defer_full_dataset_load = strategy == "rare_events" and dedup_mode == "none"
+    defer_full_dataset_load = use_gpu_safeguards and model_family == "cnn1d" and strategy == "rare_events"
     if defer_full_dataset_load:
         y_full_deferred = read_label_array_from_parquet(dataset_path, label_col)
         df = None
@@ -2209,6 +2364,13 @@ def main():
         df_model = df.iloc[selected_indices].reset_index(drop=True)
     df_model.to_parquet(training_dataset_path)
     print(f"[INFO] dataset_training_used={training_dataset_path}")
+    if df is not None:
+        del df
+    if "df_train_full" in locals():
+        del df_train_full
+    if "df_train_fit" in locals():
+        del df_train_fit
+    gc.collect()
 
     n_train_fit = len(idx_train_fit)
     n_val = len(idx_val_full)
@@ -2238,20 +2400,31 @@ def main():
     y_val = y[idx_val]
     X_test = X[idx_test]
     y_test = y[idx_test]
+    del X
+    del y
+    del y_full
+    del selected_indices
+    gc.collect()
 
     print(f"[INFO] Split sizes: train={len(y_train)}, val={len(y_val)}, test={len(y_test)}")
-    print(f"[INFO] Starting leakage detection analysis (this may take a few minutes for large datasets)...")
-    leakage_report = build_split_leakage_report(
-        df_model["OW_values"],
-        df_model[label_col],
-        {
-            "train": idx_train,
-            "val": idx_val,
-            "test": idx_test,
-        },
-    )
-    print_split_leakage_report(leakage_report)
-    print(f"[INFO] Leakage detection complete")
+    if ENABLE_EXACT_DUPLICATE_ANALYSIS or ENABLE_UNORDERED_DUPLICATE_ANALYSIS or ENABLE_NEAR_DUPLICATE_ANALYSIS:
+        print(f"[INFO] Starting leakage detection analysis (this may take a few minutes for large datasets)...")
+        leakage_report = build_split_leakage_report(
+            df_model["OW_values"],
+            df_model[label_col],
+            {
+                "train": idx_train,
+                "val": idx_val,
+                "test": idx_test,
+            },
+        )
+        print_split_leakage_report(leakage_report)
+        print(f"[INFO] Leakage detection complete")
+    else:
+        leakage_report = build_skipped_leakage_report()
+        print("[INFO] Leakage detection skipped")
+    del df_model
+    gc.collect()
 
     class_weights = compute_class_weights(y_train) if strategy == "auto" else None
 
@@ -2275,6 +2448,7 @@ def main():
         search_space,
         automl_cfg,
         training_cfg,
+        threshold_cfg,
         class_weights=class_weights,
         experiments_dir=experiments_dir,
     )
@@ -2284,30 +2458,49 @@ def main():
     # 5. Evaluación final en test + thresholds
     # ---------------------------------------------
     print(f"[INFO] Evaluating on test set...")
-    decision_threshold = 0.5
-    threshold_source = "fixed"
-    threshold_policy = "fixed_0_5"
+    threshold_policy = str(
+        threshold_cfg.get(
+            "policy",
+            training_cfg.get("threshold_policy", automl_cfg.get("threshold_policy", DEFAULT_THRESHOLD_POLICY)),
+        )
+    )
 
-    y_val_prob = sanitize_probabilities(best_model.predict(X_val, verbose=0).ravel(), "val_final")
+    final_predict_batch_size = 32 if use_gpu_safeguards and model_family == "cnn1d" and int(vectorization_info.get("max_len", 0)) >= 256 else 64
+    y_val_prob = sanitize_probabilities(best_model.predict(X_val, batch_size=final_predict_batch_size, verbose=0).ravel(), "val_final")
+    threshold_info = compute_optimal_threshold(
+        y_val,
+        y_val_prob,
+        policy=threshold_policy,
+    )
+    decision_threshold = float(threshold_info["threshold"])
+    threshold_source = str(threshold_info["source"])
+    threshold_metric = str(threshold_info["metric"])
+    threshold_warning = threshold_info.get("warning")
     val_metrics = compute_metrics_at_threshold(y_val, y_val_prob, decision_threshold)
     val_precision = float(val_metrics["precision"])
     val_recall = float(val_metrics["recall"])
     val_f1 = float(val_metrics["f1"])
+    val_pr_auc = float(average_precision_score(y_val, y_val_prob))
 
-    y_test_prob = sanitize_probabilities(best_model.predict(X_test, verbose=0).ravel(), "test")
+    y_test_prob = sanitize_probabilities(best_model.predict(X_test, batch_size=final_predict_batch_size, verbose=0).ravel(), "test")
     y_test_pred = (y_test_prob >= decision_threshold).astype("int32")
-    test_precision = precision_score(y_test, y_test_pred, zero_division=0)
-    test_recall = recall_score(y_test, y_test_pred, zero_division=0)
-    test_f1 = f1_score(y_test, y_test_pred, zero_division=0)
+    test_metrics = compute_metrics_at_threshold(y_test, y_test_prob, decision_threshold)
+    test_precision = float(test_metrics["precision"])
+    test_recall = float(test_metrics["recall"])
+    test_f1 = float(test_metrics["f1"])
+    test_pr_auc = float(average_precision_score(y_test, y_test_prob))
     cm = confusion_matrix(y_test, y_test_pred, labels=[0, 1])
     tn, fp, fn, tp = [int(v) for v in cm.ravel()]
 
     execution_time = float(time.perf_counter() - start_time)
 
-    print(f"[INFO] decision_threshold={decision_threshold:.1f} ({threshold_policy})")
-    print(f"[INFO] val_precision={val_precision:.4f}, val_recall={val_recall:.4f}, val_f1={val_f1:.4f}")
-    print(f"[INFO] test_precision={test_precision:.4f}, test_recall={test_recall:.4f}, test_f1={test_f1:.4f}")
-    print(f"[INFO] confusion@0.5: tp={tp}, tn={tn}, fp={fp}, fn={fn}")
+    print(
+        f"[INFO] decision_threshold={decision_threshold:.6f} "
+        f"({threshold_policy}, source={threshold_source}, metric={threshold_metric}, warning={threshold_warning})"
+    )
+    print(f"[INFO] val_precision={val_precision:.4f}, val_recall={val_recall:.4f}, val_f1={val_f1:.4f}, val_pr_auc={val_pr_auc:.4f}")
+    print(f"[INFO] test_precision={test_precision:.4f}, test_recall={test_recall:.4f}, test_f1={test_f1:.4f}, test_pr_auc={test_pr_auc:.4f}")
+    print(f"[INFO] confusion@threshold: tp={tp}, tn={tn}, fp={fp}, fn={fn}")
     print(f"[INFO] execution_time={execution_time:.1f}s")
 
     # ---------------------------------------------
@@ -2358,15 +2551,17 @@ def main():
       </ul>
       <h2>AutoML</h2>
       <pre>{json.dumps(best_hp, indent=2)}</pre>
-      <h2>Validation @0.5</h2>
+      <h2>Validation @selected threshold</h2>
       <p>val_precision = {val_precision:.4f}</p>
       <p>val_recall = {val_recall:.4f}</p>
       <p>val_f1 = {val_f1:.4f}</p>
-      <h2>Test @0.5</h2>
+      <p>val_pr_auc = {val_pr_auc:.4f}</p>
+      <h2>Test @selected threshold</h2>
       <ul>
         <li>precision = {test_precision:.4f}</li>
         <li>recall = {test_recall:.4f}</li>
         <li>f1 = {test_f1:.4f}</li>
+        <li>pr_auc = {test_pr_auc:.4f}</li>
                 <li>tp = {tp}</li>
                 <li>tn = {tn}</li>
                 <li>fp = {fp}</li>
@@ -2374,9 +2569,11 @@ def main():
       </ul>
       <h2>Threshold</h2>
       <ul>
-        <li>decision_threshold = {decision_threshold:.1f}</li>
+        <li>decision_threshold = {decision_threshold:.6f}</li>
         <li>threshold_source = {threshold_source}</li>
         <li>threshold_policy = {threshold_policy}</li>
+        <li>threshold_metric = {threshold_metric}</li>
+        <li>threshold_warning = {threshold_warning}</li>
       </ul>
       <h2>Split Leakage Audit</h2>
       <ul>
@@ -2440,13 +2637,24 @@ def main():
             "decision_threshold": float(decision_threshold),
             "threshold_source": str(threshold_source),
             "threshold_policy": str(threshold_policy),
+            "threshold_metric": str(threshold_metric),
+            "threshold_warning": threshold_warning,
             "best_val_recall": float(val_recall),
             "val_precision": float(val_precision),
             "val_recall": float(val_recall),
             "val_f1": float(val_f1),
+            "val_pr_auc": float(val_pr_auc),
+            "val_precision_at_threshold": float(val_precision),
+            "val_recall_at_threshold": float(val_recall),
+            "val_f1_at_threshold": float(val_f1),
             "test_precision": float(test_precision),
             "test_recall": float(test_recall),
             "test_f1": float(test_f1),
+            "test_precision_at_threshold": float(test_precision),
+            "test_recall_at_threshold": float(test_recall),
+            "test_f1_at_threshold": float(test_f1),
+            "test_fn_at_threshold": int(fn),
+            "test_pr_auc": float(test_pr_auc),
             "imbalance_strategy": str(strategy),
             "parent_f04": str(parent_variant),
             "parent_f03": str(parent_f03),
@@ -2457,6 +2665,7 @@ def main():
             "mejor_modelo_f1": best_validation_candidates.get("mejor_modelo_f1"),
             "mejor_modelo_precision": best_validation_candidates.get("mejor_modelo_precision"),
             "mejor_modelo_recall": best_validation_candidates.get("mejor_modelo_recall"),
+            "threshold_selection": convert_to_native_types(threshold_info),
             "n_train": int(len(y_train)),
             "n_val": int(len(y_val)),
             "n_test": int(len(y_test)),
@@ -2484,6 +2693,15 @@ def main():
             "positive_ratio_test": float(y_test.mean()),
             "val_positive_ratio": float(y_val.mean()),
             "test_positive_ratio": float(y_test.mean()),
+            "val_pr_auc": float(val_pr_auc),
+            "val_precision_at_threshold": float(val_precision),
+            "val_recall_at_threshold": float(val_recall),
+            "val_f1_at_threshold": float(val_f1),
+            "test_pr_auc": float(test_pr_auc),
+            "test_precision_at_threshold": float(test_precision),
+            "test_recall_at_threshold": float(test_recall),
+            "test_f1_at_threshold": float(test_f1),
+            "test_fn_at_threshold": int(fn),
             "val_cap_used": bool(val_cap_used),
             "test_cap_used": bool(test_cap_used),
             "val_max_samples": int(val_max_samples) if val_max_samples is not None else None,
@@ -2518,9 +2736,18 @@ def main():
                 "val_precision": float(val_precision),
                 "val_recall": float(val_recall),
                 "val_f1": float(val_f1),
+                "val_pr_auc": float(val_pr_auc),
+                "val_precision_at_threshold": float(val_precision),
+                "val_recall_at_threshold": float(val_recall),
+                "val_f1_at_threshold": float(val_f1),
                 "test_precision": float(test_precision),
                 "test_recall": float(test_recall),
                 "test_f1": float(test_f1),
+                "test_precision_at_threshold": float(test_precision),
+                "test_recall_at_threshold": float(test_recall),
+                "test_f1_at_threshold": float(test_f1),
+                "test_fn_at_threshold": int(fn),
+                "test_pr_auc": float(test_pr_auc),
                 "test_tp": int(tp),
                 "test_tn": int(tn),
                 "test_fp": int(fp),
@@ -2532,6 +2759,7 @@ def main():
                 "decision_threshold": float(decision_threshold),
                 "threshold_source": str(threshold_source),
                 "threshold_policy": str(threshold_policy),
+                "threshold_metric": str(threshold_metric),
             },
             "artifacts": [
                 str(model_path),
@@ -2549,3 +2777,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

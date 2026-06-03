@@ -39,6 +39,8 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
     f1_score,
+    average_precision_score,
+    confusion_matrix,
     precision_recall_curve,
 )
 
@@ -165,6 +167,85 @@ def build_calibration_input(
     }
 
 
+
+def sanitize_probabilities(y_prob, context=""):
+    arr = np.asarray(y_prob, dtype=np.float64)
+    non_finite = ~np.isfinite(arr)
+    if non_finite.any():
+        arr[non_finite] = 0.0
+    return np.clip(arr, 0.0, 1.0)
+
+
+def compute_binary_metrics(y_true, y_prob, threshold: float):
+    y_prob = sanitize_probabilities(y_prob, "tflite_eval")
+    y_pred = (y_prob >= threshold).astype("int32")
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+    tn, fp, fn, tp = [int(v) for v in cm.ravel()]
+    return {
+        "precision": float(precision_score(y_true, y_pred, zero_division=0)),
+        "recall": float(recall_score(y_true, y_pred, zero_division=0)),
+        "f1": float(f1_score(y_true, y_pred, zero_division=0)),
+        "pr_auc": float(average_precision_score(y_true, y_prob)),
+        "tp": tp,
+        "tn": tn,
+        "fp": fp,
+        "fn": fn,
+    }
+
+
+def quantize_input_for_tflite(sample, input_detail):
+    dtype = input_detail["dtype"]
+    scale, zero_point = input_detail.get("quantization", (0.0, 0))
+    sample = sample.astype(np.float32)
+    if np.issubdtype(dtype, np.integer):
+        if scale in (None, 0.0):
+            raise RuntimeError("TFLite integer input has invalid quantization scale")
+        q = np.round(sample / float(scale) + int(zero_point))
+        info = np.iinfo(dtype)
+        return np.clip(q, info.min, info.max).astype(dtype)
+    return sample.astype(dtype)
+
+
+def dequantize_output_from_tflite(output, output_detail):
+    dtype = output_detail["dtype"]
+    if np.issubdtype(dtype, np.integer):
+        scale, zero_point = output_detail.get("quantization", (0.0, 0))
+        if scale in (None, 0.0):
+            return output.astype(np.float32)
+        return (output.astype(np.float32) - int(zero_point)) * float(scale)
+    return output.astype(np.float32)
+
+
+def predict_tflite_probabilities(tflite_bytes: bytes, X_eval: np.ndarray):
+    interpreter = tf.lite.Interpreter(model_content=tflite_bytes)
+    interpreter.allocate_tensors()
+    input_detail = interpreter.get_input_details()[0]
+    output_detail = interpreter.get_output_details()[0]
+    input_index = input_detail["index"]
+    output_index = output_detail["index"]
+    y_prob = np.zeros(len(X_eval), dtype=np.float32)
+    for i in range(len(X_eval)):
+        sample = X_eval[i:i + 1]
+        interpreter.set_tensor(input_index, quantize_input_for_tflite(sample, input_detail))
+        interpreter.invoke()
+        output = dequantize_output_from_tflite(interpreter.get_tensor(output_index), output_detail).ravel()
+        y_prob[i] = float(output[-1]) if output.size else 0.0
+    return sanitize_probabilities(y_prob, "tflite_eval")
+
+
+def slice_f05_test_set(X, y, parent_outputs: dict):
+    metrics = parent_outputs.get("metrics") or {}
+    n_train = int(metrics.get("n_train", 0))
+    n_val = int(metrics.get("n_val", 0))
+    n_test = int(metrics.get("n_test", 0))
+    if n_train <= 0 or n_val < 0 or n_test <= 0:
+        raise RuntimeError("Parent F05 metrics must include n_train, n_val and n_test")
+    start = n_train + n_val
+    end = start + n_test
+    if end > len(y):
+        raise RuntimeError(f"F05 test slice [{start}:{end}] exceeds dataset length {len(y)}")
+    return X[start:end], y[start:end].astype("int32")
+
 def build_tflite(model, X_calib, inference_input_dtype=tf.int8):
     """Genera modelo TFLite cuantizado a partir de un modelo Keras y X_calib."""
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
@@ -258,12 +339,19 @@ def main():
 
     # Copia dataset + modelo (fase autocontenida)
     dst_dataset = variant_dir / "06_calibration_dataset.parquet"
+    dst_test_dataset = variant_dir / "06_test_dataset.parquet"
     dst_model = variant_dir / "06_model_float.h5"
     shutil.copy2(dataset_path, dst_dataset)
     if parent_trainable and model_path is not None and model_path.exists():
         shutil.copy2(model_path, dst_model)
 
     df = pd.read_parquet(dst_dataset)
+    parent_metrics = parent_outputs.get("metrics") or {}
+    test_start = int(parent_metrics.get("n_train", 0)) + int(parent_metrics.get("n_val", 0))
+    test_end = test_start + int(parent_metrics.get("n_test", 0))
+    if 0 <= test_start < test_end <= len(df):
+        df.iloc[test_start:test_end].to_parquet(dst_test_dataset)
+
     candidates = [
         exports_parent.get("target_column"),
         "label",
@@ -300,6 +388,8 @@ def main():
     arena_estimated_bytes = None
     footprint_estimated_bytes = None
     decision_threshold = None
+    tflite_eval_threshold = float(exports_parent.get("decision_threshold", 0.5))
+    tflite_test_metrics = None
 
     edge_capable = True
     incompat_reason = None
@@ -411,6 +501,14 @@ def main():
                 # Aquí fijamos los operadores “exportables” (modelo cuantizado)
                 exported_operators = operators_quant
 
+                X_test, y_test = slice_f05_test_set(X, y, parent_outputs)
+                y_tflite_prob = predict_tflite_probabilities(tflite_bytes, X_test)
+                tflite_test_metrics = compute_binary_metrics(
+                    y_test,
+                    y_tflite_prob,
+                    tflite_eval_threshold,
+                )
+
                 # --------------------------------------------------
                 # 4. MANIFEST EEDU LIGERO (sin resolver de operadores)
                 # --------------------------------------------------
@@ -465,6 +563,16 @@ def main():
         <li>arena_estimated_bytes = {arena_estimated_bytes}</li>
         <li>footprint_estimated_bytes = {footprint_estimated_bytes}</li>
       </ul>
+      <h2>TFLite Test Evaluation</h2>
+      <ul>
+        <li>threshold = {tflite_eval_threshold}</li>
+        <li>precision = {None if tflite_test_metrics is None else tflite_test_metrics["precision"]}</li>
+        <li>recall = {None if tflite_test_metrics is None else tflite_test_metrics["recall"]}</li>
+        <li>f1 = {None if tflite_test_metrics is None else tflite_test_metrics["f1"]}</li>
+        <li>pr_auc = {None if tflite_test_metrics is None else tflite_test_metrics["pr_auc"]}</li>
+        <li>false_positives = {None if tflite_test_metrics is None else tflite_test_metrics["fp"]}</li>
+        <li>false_negatives = {None if tflite_test_metrics is None else tflite_test_metrics["fn"]}</li>
+      </ul>
       <h2>Execution</h2>
       <p>execution_time = {execution_time:.2f} s</p>
     </body>
@@ -485,6 +593,13 @@ def main():
             "sha256": sha256_of_file(report_path),
         },
     }
+
+
+    if dst_test_dataset.exists():
+        artifacts["test_dataset"] = {
+            "path": dst_test_dataset.name,
+            "sha256": sha256_of_file(dst_test_dataset),
+        }
 
     if dst_model.exists():
         artifacts["model_float"] = {
@@ -539,6 +654,14 @@ def main():
         exports_out["incompatibility_reason"] = str(incompat_reason)
     if decision_threshold is not None:
         exports_out["decision_threshold"] = float(decision_threshold)
+    if tflite_test_metrics is not None:
+        exports_out["tflite_eval_threshold"] = float(tflite_eval_threshold)
+        exports_out["tflite_test_precision"] = float(tflite_test_metrics["precision"])
+        exports_out["tflite_test_recall"] = float(tflite_test_metrics["recall"])
+        exports_out["tflite_test_f1"] = float(tflite_test_metrics["f1"])
+        exports_out["tflite_test_pr_auc"] = float(tflite_test_metrics["pr_auc"])
+        exports_out["tflite_test_fp"] = int(tflite_test_metrics["fp"])
+        exports_out["tflite_test_fn"] = int(tflite_test_metrics["fn"])
     if model_size_bytes is not None:
         exports_out["model_size_bytes"] = int(model_size_bytes)
     if arena_estimated_bytes is not None:
@@ -581,6 +704,18 @@ def main():
             and quant_signature["output_dtype"] == "int8"
         ),
     }
+    if tflite_test_metrics is not None:
+        metrics.update({
+            "tflite_eval_threshold": float(tflite_eval_threshold),
+            "tflite_test_precision": float(tflite_test_metrics["precision"]),
+            "tflite_test_recall": float(tflite_test_metrics["recall"]),
+            "tflite_test_f1": float(tflite_test_metrics["f1"]),
+            "tflite_test_pr_auc": float(tflite_test_metrics["pr_auc"]),
+            "tflite_test_tp": int(tflite_test_metrics["tp"]),
+            "tflite_test_tn": int(tflite_test_metrics["tn"]),
+            "tflite_test_fp": int(tflite_test_metrics["fp"]),
+            "tflite_test_fn": int(tflite_test_metrics["fn"]),
+        })
 
     outputs = {
         "phase": PHASE,
