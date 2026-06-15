@@ -63,6 +63,15 @@ FAST_MAX_MAJORITY_SAMPLES = 20_000
 DEFAULT_THRESHOLD_POLICY = "optimal_f2"
 DEFAULT_CNN1D_EVAL_MAX_SAMPLES = 25_000
 INPUT_SEQUENCE_COLUMN = "OW_values"
+TS_INPUT_METADATA = {
+    "input_sequence_column": INPUT_SEQUENCE_COLUMN,
+    "input_representation": "continuous_timeseries",
+    "input_dtype_train": "float32",
+    "input_dtype_tflite": "int8",
+    "uses_embedding": False,
+    "uses_event_ids": False,
+}
+
 
 # ── Análisis opcionales (desactivar para acelerar ejecución) ──────────────────
 ENABLE_EXACT_DUPLICATE_ANALYSIS    = False   # set operations, rápido
@@ -1292,7 +1301,12 @@ def build_dense_bow_model(aux: dict, hp: dict) -> tf.keras.Model:
     dropout = float(hp.get("dropout", 0.0))
 
     model = tf.keras.Sequential(name="dense_bow_binary_classifier")
-    model.add(tf.keras.layers.Input(shape=(int(aux["input_dim"]),)))
+    model.add(
+        tf.keras.layers.Input(
+            shape=(int(aux["input_dim"]),),
+            dtype=tf.float32,
+        )
+    )
 
     for _ in range(n_layers):
         model.add(tf.keras.layers.Dense(units, activation="relu"))
@@ -1300,100 +1314,6 @@ def build_dense_bow_model(aux: dict, hp: dict) -> tf.keras.Model:
             model.add(tf.keras.layers.Dropout(dropout))
 
     model.add(tf.keras.layers.Dense(1, activation="sigmoid"))
-
-    return model
-
-
-def build_sequence_embedding_model(aux: dict, hp: dict) -> tf.keras.Model:
-    n_layers = int(hp.get("n_layers", 1))
-    units = int(hp.get("units", 64))
-    dropout = float(hp.get("dropout", 0.0))
-    embed_dim = int(hp.get("embed_dim", 32))
-
-    model = tf.keras.Sequential(name="sequence_embedding_binary_classifier")
-    model.add(tf.keras.layers.Input(shape=(int(aux["max_len"]),)))
-    model.add(
-        tf.keras.layers.Embedding(
-            input_dim=int(aux["vocab_size"]) + 1,
-            output_dim=embed_dim,
-            mask_zero=True,
-        )
-    )
-    model.add(tf.keras.layers.GlobalAveragePooling1D())
-
-    for _ in range(n_layers):
-        model.add(tf.keras.layers.Dense(units, activation="relu"))
-        if dropout > 0:
-            model.add(tf.keras.layers.Dropout(dropout))
-
-    model.add(tf.keras.layers.Dense(1, activation="sigmoid"))
-
-    return model
-
-
-def build_cnn1d_model(aux: dict, hp: dict) -> tf.keras.Model:
-    n_layers = int(hp.get("n_layers", 1))
-    units = int(hp.get("units", 64))
-    dropout = float(hp.get("dropout", 0.0))
-    embed_dim = int(hp.get("embed_dim", 32))
-    filters = int(hp.get("filters", 64))
-    kernel_size = int(hp.get("kernel_size", 3))
-
-    model = tf.keras.Sequential(name="cnn1d_binary_classifier")
-    model.add(tf.keras.layers.Input(shape=(int(aux["max_len"]),)))
-    model.add(
-        tf.keras.layers.Embedding(
-            input_dim=int(aux["vocab_size"]) + 1,
-            output_dim=embed_dim,
-        )
-    )
-    model.add(
-        tf.keras.layers.Conv1D(
-            filters=filters,
-            kernel_size=kernel_size,
-            activation="relu",
-            padding="same",
-        )
-    )
-    model.add(tf.keras.layers.GlobalMaxPooling1D())
-
-    for _ in range(n_layers):
-        model.add(tf.keras.layers.Dense(units, activation="relu"))
-        if dropout > 0:
-            model.add(tf.keras.layers.Dropout(dropout))
-
-    model.add(tf.keras.layers.Dense(1, activation="sigmoid"))
-
-    return model
-
-
-def build_model(
-    model_family: str,
-    hp: dict,
-    aux: dict,
-) -> tf.keras.Model:
-    if model_family == "dense_bow":
-        model = build_dense_bow_model(aux, hp)
-    elif model_family == "sequence_embedding":
-        model = build_sequence_embedding_model(aux, hp)
-    elif model_family == "cnn1d":
-        model = build_cnn1d_model(aux, hp)
-    else:
-        raise ValueError(
-            f"model_family no soportada: {model_family}. "
-            "Use una de: dense_bow, sequence_embedding, cnn1d"
-        )
-
-    lr = float(hp.get("learning_rate", 1e-3))
-
-    model.compile(
-        optimizer=build_adam_optimizer(lr),
-        loss="binary_crossentropy",
-        metrics=[
-            tf.keras.metrics.Precision(name="precision"),
-            tf.keras.metrics.Recall(name="recall"),
-        ],
-    )
 
     return model
 
@@ -1868,6 +1788,9 @@ def write_non_trainable_outputs(
             "PW": int(PW),
             "prediction_name": str(prediction_name),
             "model_family": str(model_family),
+            **TS_INPUT_METADATA,
+            "normalization_mean": None,
+            "normalization_std": None,
             "trainable": False,
             "incompatibility_reason": str(reason),
         },
@@ -1985,19 +1908,30 @@ def pad_numeric_sequences(sequences, max_len: int) -> np.ndarray:
     return X
 
 
-def vectorize_numeric_sequence(df: pd.DataFrame, label_col: str, model_family: str):
+def vectorize_numeric_sequence(
+    df: pd.DataFrame,
+    label_col: str,
+    model_family: str,
+    train_indices,
+):
     if INPUT_SEQUENCE_COLUMN not in df.columns:
         raise RuntimeError(f"El dataset de F04 debe contener la columna '{INPUT_SEQUENCE_COLUMN}'")
 
     sequences = df[INPUT_SEQUENCE_COLUMN].tolist()
     y = df[label_col].astype("int32").values
 
-    lengths = [len(seq) for seq in sequences]
-    max_len = max(1, int(np.percentile(lengths, 95))) if lengths else 1
+    train_indices = np.asarray(train_indices, dtype=np.int64)
+    if train_indices.size == 0:
+        raise RuntimeError("train_indices must contain at least one row")
+
+    train_sequences = [sequences[int(i)] for i in train_indices]
+    train_lengths = [len(seq) for seq in train_sequences]
+    max_len = max(1, int(np.percentile(train_lengths, 95))) if train_lengths else 1
     X_2d = pad_numeric_sequences(sequences, max_len)
 
-    mean = float(np.mean(X_2d)) if X_2d.size else 0.0
-    std = float(np.std(X_2d)) if X_2d.size else 1.0
+    X_train_2d = X_2d[train_indices]
+    mean = float(np.mean(X_train_2d)) if X_train_2d.size else 0.0
+    std = float(np.std(X_train_2d)) if X_train_2d.size else 1.0
     if std <= 0.0:
         std = 1.0
     X_2d = ((X_2d - mean) / std).astype(np.float32)
@@ -2014,14 +1948,26 @@ def vectorize_numeric_sequence(df: pd.DataFrame, label_col: str, model_family: s
         "max_len": int(max_len),
         "vectorization": vectorization,
         "sequence_column": INPUT_SEQUENCE_COLUMN,
+        **TS_INPUT_METADATA,
         "normalization_mean": mean,
         "normalization_std": std,
+        "normalization_source": "train_only",
     }
 
 
-def vectorize_for_family(df: pd.DataFrame, label_col: str, model_family: str):
+def vectorize_for_family(
+    df: pd.DataFrame,
+    label_col: str,
+    model_family: str,
+    train_indices,
+):
     if model_family in {"dense_bow", "cnn1d"}:
-        return vectorize_numeric_sequence(df, label_col, model_family)
+        return vectorize_numeric_sequence(
+            df,
+            label_col,
+            model_family,
+            train_indices,
+        )
 
     if model_family == "sequence_embedding":
         raise ValueError(
@@ -2042,8 +1988,13 @@ def build_cnn1d_model(aux: dict, hp: dict) -> tf.keras.Model:
     filters = int(hp.get("filters", 64))
     kernel_size = int(hp.get("kernel_size", 3))
 
-    model = tf.keras.Sequential(name="cnn1d_numeric_binary_classifier")
-    model.add(tf.keras.layers.Input(shape=(int(aux["max_len"]), 1)))
+    model = tf.keras.Sequential(name="cnn1d_binary_classifier")
+    model.add(
+        tf.keras.layers.Input(
+            shape=(int(aux["max_len"]), 1),
+            dtype=tf.float32,
+        )
+    )
     model.add(
         tf.keras.layers.Conv1D(
             filters=filters,
@@ -2391,6 +2342,7 @@ def main():
         df_model,
         label_col,
         model_family,
+        idx_train,
     )
     print(f"[INFO] Vectorization complete: X.shape={X.shape}, y.shape={y.shape}")
 
@@ -2627,6 +2579,11 @@ def main():
             "prediction_name": str(prediction_name),
             "measure_name": str(measure_name),
             "model_family": str(model_family),
+            **TS_INPUT_METADATA,
+            "normalization_mean": float(vectorization_info["normalization_mean"]),
+            "normalization_std": float(vectorization_info["normalization_std"]),
+            "normalization_source": str(vectorization_info["normalization_source"]),
+            "input_max_len": int(vectorization_info["max_len"]),
             "window_strategy": str(window_strategy),
             "deduplication_mode": str(dedup_mode),
             "deduplication_mode_effective": str(dedup_stats["dedup_mode_effective"]),
@@ -2662,6 +2619,10 @@ def main():
         },
         "metrics": {
             "execution_time": float(execution_time),
+            **TS_INPUT_METADATA,
+            "normalization_mean": float(vectorization_info["normalization_mean"]),
+            "normalization_std": float(vectorization_info["normalization_std"]),
+            "normalization_source": str(vectorization_info["normalization_source"]),
             "mejor_modelo_f1": best_validation_candidates.get("mejor_modelo_f1"),
             "mejor_modelo_precision": best_validation_candidates.get("mejor_modelo_precision"),
             "mejor_modelo_recall": best_validation_candidates.get("mejor_modelo_recall"),

@@ -58,6 +58,14 @@ from tensorflow.lite.python import schema_py_generated as schema_fb
 PHASE = "f06_quant"
 PARENT_PHASE = "f05_modeling"
 INPUT_SEQUENCE_COLUMN = "OW_values"
+TS_INPUT_METADATA = {
+    "input_sequence_column": INPUT_SEQUENCE_COLUMN,
+    "input_representation": "continuous_timeseries",
+    "input_dtype_train": "float32",
+    "input_dtype_tflite": "int8",
+    "uses_embedding": False,
+    "uses_event_ids": False,
+}
 
 
 # ============================================================
@@ -123,6 +131,8 @@ def build_calibration_input(
     label_col: str,
     model_family: str,
     model,
+    normalization_mean: float,
+    normalization_std: float,
 ):
     """Construye X_calib desde OW_values como secuencia numerica continua."""
     if INPUT_SEQUENCE_COLUMN not in df.columns:
@@ -148,10 +158,10 @@ def build_calibration_input(
         trunc = arr[-max_len:]
         X_2d[i, -len(trunc):] = trunc
 
-    mean = float(np.mean(X_2d)) if X_2d.size else 0.0
-    std = float(np.std(X_2d)) if X_2d.size else 1.0
+    mean = float(normalization_mean)
+    std = float(normalization_std)
     if std <= 0.0:
-        std = 1.0
+        raise RuntimeError(f"F05 exported invalid normalization_std={std}")
     X_2d = ((X_2d - mean) / std).astype(np.float32)
 
     if model_family == "cnn1d":
@@ -164,6 +174,8 @@ def build_calibration_input(
         "input_max_len": int(max_len),
         "normalization_mean": mean,
         "normalization_std": std,
+        "normalization_source": "f05_train_only",
+        **TS_INPUT_METADATA,
     }
 
 
@@ -250,10 +262,11 @@ def build_tflite(model, X_calib, inference_input_dtype=tf.int8):
     """Genera modelo TFLite cuantizado a partir de un modelo Keras y X_calib."""
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    model_input_dtype = model.inputs[0].dtype.as_numpy_dtype
 
     def rep_dataset():
         for i in range(min(256, len(X_calib))):
-            yield [X_calib[i:i+1].astype(np.float32)]
+            yield [X_calib[i:i+1].astype(model_input_dtype)]
 
     converter.representative_dataset = rep_dataset
     converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
@@ -406,11 +419,52 @@ def main():
     else:
         model = tf.keras.models.load_model(dst_model)
 
+        normalization_mean = exports_parent.get("normalization_mean")
+        normalization_std = exports_parent.get("normalization_std")
+        if normalization_mean is None or normalization_std is None:
+            raise RuntimeError(
+                "F05 must export train-only normalization_mean and normalization_std"
+            )
+        if exports_parent.get("input_sequence_column") != INPUT_SEQUENCE_COLUMN:
+            raise RuntimeError(
+                f"F05 input_sequence_column must be {INPUT_SEQUENCE_COLUMN}"
+            )
+        if exports_parent.get("input_representation") != "continuous_timeseries":
+            raise RuntimeError("F05 input_representation must be continuous_timeseries")
+        if exports_parent.get("input_dtype_train") != "float32":
+            raise RuntimeError("F05 input_dtype_train must be float32")
+        if exports_parent.get("normalization_source") != "train_only":
+            raise RuntimeError("F05 normalization_source must be train_only")
+        if exports_parent.get("uses_embedding") is not False:
+            raise RuntimeError("TS models must export uses_embedding=false")
+        if exports_parent.get("uses_event_ids") is not False:
+            raise RuntimeError("TS models must export uses_event_ids=false")
+        if model.inputs[0].dtype != tf.float32:
+            raise RuntimeError(
+                f"TS model input dtype must be float32, got {model.inputs[0].dtype.name}"
+            )
+        if any(isinstance(layer, tf.keras.layers.Embedding) for layer in model.layers):
+            raise RuntimeError("TS models must not contain Embedding layers")
+
+        input_shape = tuple(model.input_shape)
+        if model_family == "cnn1d" and (
+            len(input_shape) != 3 or input_shape[-1] != 1
+        ):
+            raise RuntimeError(
+                f"cnn1d TS input shape must be (None, max_len, 1), got {input_shape}"
+            )
+        if model_family == "dense_bow" and len(input_shape) != 2:
+            raise RuntimeError(
+                f"dense TS input shape must be (None, max_len), got {input_shape}"
+            )
+
         X, calibration_info = build_calibration_input(
             df,
             label_col,
             model_family,
             model,
+            normalization_mean=float(normalization_mean),
+            normalization_std=float(normalization_std),
         )
         y = df[label_col].values
 
@@ -464,10 +518,10 @@ def main():
                     f"{quant_signature['num_outputs']}"
                 )
 
-            elif quant_signature["input_dtype"] not in {"int8", "uint8"}:
+            elif quant_signature["input_dtype"] != "int8":
                 edge_capable = False
                 incompat_reason = (
-                    f"Quantized model input dtype must be int8 or uint8, got "
+                    f"Quantized TS model input dtype must be int8, got "
                     f"{quant_signature['input_dtype']}"
                 )
 
@@ -646,6 +700,7 @@ def main():
         "runtime_model_name": str(runtime_model_name),
         "model_family": str(model_family),
         "edge_capable": bool(edge_capable),
+        **TS_INPUT_METADATA,
     }
 
     exports_out.update(calibration_info)
@@ -678,6 +733,7 @@ def main():
         exports_out["output_shape"] = quant_signature["output_shape"]
         exports_out["input_bytes"] = quant_signature["input_bytes"]
         exports_out["output_bytes"] = quant_signature["output_bytes"]
+        exports_out["input_dtype_tflite"] = quant_signature["input_dtype"]
 
     # ----------------------------------------------------------
     # 8. METRICS
@@ -685,6 +741,9 @@ def main():
     all_unsupported = set(unsupported_float) | set(unsupported_quant)
     metrics = {
         "execution_time": float(execution_time),
+        **TS_INPUT_METADATA,
+        "normalization_mean": calibration_info.get("normalization_mean"),
+        "normalization_std": calibration_info.get("normalization_std"),
         "tflm_compatible": bool(edge_capable),
         "operators_detected": int(len(operators_float)),
         "unsupported_operators": int(len(all_unsupported)),
@@ -700,7 +759,7 @@ def main():
             quant_signature is not None
             and quant_signature["num_inputs"] == 1
             and quant_signature["num_outputs"] == 1
-            and quant_signature["input_dtype"] in {"int8", "uint8"}
+            and quant_signature["input_dtype"] == "int8"
             and quant_signature["output_dtype"] == "int8"
         ),
     }

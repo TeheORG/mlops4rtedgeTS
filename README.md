@@ -97,7 +97,7 @@ Salida principal:
 ### F03: crear ventanas
 
 ```bash
-make variant3 VARIANT=v3_0000 PARENT=v2_0000 OW=600 LT=1 PW=100 STRATEGY=synchro NAN_MODE=discard
+make variant3 VARIANT=v3_0000 PARENT=v2_0000 OW=600 LT=10 PW=10 STRATEGY=synchro NAN_MODE=discard
 make script3 VARIANT=v3_0000
 make check3 VARIANT=v3_0000
 make register3 VARIANT=v3_0000
