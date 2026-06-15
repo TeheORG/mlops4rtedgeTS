@@ -531,6 +531,7 @@ def _update_model_profile(
     models_row: dict,
     memory_row: dict,
     system_row: dict,
+    time_scale_factor: float = 1.0,
 ):
     profile_path = root / "07_model_profile.yaml"
     profile = _load_yaml_if_exists(profile_path)
@@ -552,12 +553,21 @@ def _update_model_profile(
     profile["run"] = run_block
 
     timing_block = profile.get("timing", {}) or {}
+    _raw_itmax = models_row.get("infer_worst_ms", models_row.get("infer_max_ms"))
+    # QEMU timing (time_scale_factor < 1) is unreliable — raw values vary wildly between
+    # runs due to emulator scheduling. Don't overwrite itmax_ms so f081 falls back to
+    # limits.itmax_ms (the configured ITmax from the hardware spec).
+    # On real hardware (time_scale_factor == 1.0) the measured value is trustworthy.
+    if time_scale_factor < 1.0:
+        _itmax_to_store = timing_block.get("itmax_ms")  # keep existing profile value
+    else:
+        _itmax_to_store = _raw_itmax
     timing_block.update(
         {
             "edge_mean_latency_ms": system_row.get("process_mean_ms", models_row.get("infer_mean_ms")),
             "edge_max_latency_ms": system_row.get("process_max_ms", models_row.get("infer_max_ms")),
             "edge_jitter_ms": system_row.get("process_jitter_ms", models_row.get("infer_jitter_ms")),
-            "itmax_ms": models_row.get("infer_worst_ms", models_row.get("infer_max_ms")),
+            "itmax_ms": _itmax_to_store,
         }
     )
     profile["timing"] = timing_block
@@ -727,6 +737,9 @@ def run_analysis(variant, parent_variant=None, fp_index=None):
 
     resolved_parent = _resolve_parent_variant(root, parent_variant)
     parent_exports = _load_f06_exports(resolved_parent)
+
+    _params_data = yaml.safe_load((root / "params.yaml").read_text()) if (root / "params.yaml").exists() else {}
+    _time_scale_factor = float((_params_data.get("parameters") or _params_data).get("time_scale_factor", 1.0))
 
     if not bool(parent_exports.get("edge_capable", False)):
         write_outputs_yaml(
@@ -912,6 +925,7 @@ def run_analysis(variant, parent_variant=None, fp_index=None):
         models_row=models_row,
         memory_row=memory_row,
         system_row=system_row,
+        time_scale_factor=_time_scale_factor,
     )
 
     artifacts = [

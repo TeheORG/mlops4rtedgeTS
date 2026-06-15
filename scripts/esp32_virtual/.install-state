@@ -1,0 +1,17 @@
+# ESP32 Virtual Runner — Install State
+# 'make snapshot' regenera PRE_. 'make uninstall' deshace solo INST_=true con PRE_=false.
+DISTRO=arch
+CREATED_AT=2026-06-09
+
+# Pre-existentes antes de este Makefile (no se tocan en uninstall)
+PRE_SOCAT=true
+PRE_PYYAML=true
+PRE_DOCKER=true
+PRE_PYSERIAL=true
+PRE_QEMU_ESP32=false
+
+# Instalado por este Makefile (actualizado automáticamente)
+INST_SOCAT=false
+INST_PYSERIAL=false
+INST_QEMU_ESP32=true
+INST_QEMU_ESP32_PATH=/opt/qemu-esp32

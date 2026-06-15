@@ -23,6 +23,7 @@ from scripts.core.artifacts import PROJECT_ROOT, get_variant_dir
 
 PHASE = "f08_sysval"
 IDF_DOCKER_IMAGE = "mlops4ofp-idf:6.0"
+DEFAULT_FLASH_BAUD = 115200
 
 
 # ============================================================
@@ -230,7 +231,8 @@ def run_host_esptool_flash(port: str, esp_project_dir: Path, flash_log: Path) ->
     if not flash_args.exists():
         return False
 
-    print("[F08] Intentando flash en host con esptool")
+    flash_baud = os.environ.get("F08_FLASH_BAUD", str(DEFAULT_FLASH_BAUD))
+    print(f"[F08] Intentando flash en host con esptool a {flash_baud} baud")
     rc, _ = run_and_log_result(
         [
             sys.executable,
@@ -241,7 +243,7 @@ def run_host_esptool_flash(port: str, esp_project_dir: Path, flash_log: Path) ->
             "-p",
             port,
             "-b",
-            "460800",
+            flash_baud,
             "--before",
             "default-reset",
             "--after",
@@ -275,9 +277,10 @@ def flash_portable(
     docker_ok, docker_err = can_map_docker_device(port, IDF_DOCKER_IMAGE)
 
     if docker_ok:
-        print("[F08] Flash vía Docker")
+        flash_baud = os.environ.get("F08_FLASH_BAUD", str(DEFAULT_FLASH_BAUD))
+        print(f"[F08] Flash vía Docker a {flash_baud} baud")
         run_idf_and_log(
-            ["-p", port, "flash"],
+            ["-p", port, "-b", flash_baud, "flash"],
             flash_log,
             esp_project_dir=esp_project_dir,
             port=port,
@@ -797,6 +800,7 @@ def main():
     parser.add_argument("--drain-seconds", type=float, default=None)
     parser.add_argument("--build-only", action="store_true")
     parser.add_argument("--no-clean-build", action="store_true")
+    parser.add_argument("--skip-flash", action="store_true", help="Omite el flasheo mediante esptool (requerido para QEMU)")
     args = parser.parse_args()
 
     try:
@@ -890,36 +894,42 @@ def main():
 
         esp_project_dir = project_dir
 
-        print("\n=== BUILD ===")
-        if not args.no_clean_build:
-            build_dir = esp_project_dir / "build"
-            if build_dir.exists():
-                shutil.rmtree(build_dir)
-                print(f"[F08] build limpio: {build_dir}")
+        if args.skip_flash:
+            print("\n=== BUILD (SALTADO) ===")
+            docker_memory_limit = resolve_docker_memory_limit()
+            docker_memory_swap = resolve_docker_memory_swap()
+            docker_cpus = resolve_docker_cpus()
+        else:
+            print("\n=== BUILD ===")
+            if not args.no_clean_build:
+                build_dir = esp_project_dir / "build"
+                if build_dir.exists():
+                    shutil.rmtree(build_dir)
+                    print(f"[F08] build limpio: {build_dir}")
 
-        sync_generated_sources_for_build(esp_project_dir)
-        sanitize_sdkconfig_for_docker(esp_project_dir)
-        docker_memory_limit = resolve_docker_memory_limit()
-        docker_memory_swap = resolve_docker_memory_swap()
-        docker_cpus = resolve_docker_cpus()
+            sync_generated_sources_for_build(esp_project_dir)
+            sanitize_sdkconfig_for_docker(esp_project_dir)
+            docker_memory_limit = resolve_docker_memory_limit()
+            docker_memory_swap = resolve_docker_memory_swap()
+            docker_cpus = resolve_docker_cpus()
 
-        if docker_memory_limit:
-            print(f"[F08] Docker memory limit por defecto: {docker_memory_limit}")
-        if docker_memory_swap:
-            print(f"[F08] Docker memory-swap: {docker_memory_swap}")
-        if docker_cpus:
-            print(f"[F08] Docker cpus: {docker_cpus}")
+            if docker_memory_limit:
+                print(f"[F08] Docker memory limit por defecto: {docker_memory_limit}")
+            if docker_memory_swap:
+                print(f"[F08] Docker memory-swap: {docker_memory_swap}")
+            if docker_cpus:
+                print(f"[F08] Docker cpus: {docker_cpus}")
 
-        build_jobs = os.environ.get("F08_DOCKER_BUILD_JOBS", "1")
-        run_idf_and_log(
-            ["build"],
-            build_log,
-            esp_project_dir=esp_project_dir,
-            cmake_parallel_level=build_jobs,
-            docker_memory_limit=docker_memory_limit,
-            docker_memory_swap=docker_memory_swap,
-            docker_cpus=docker_cpus,
-        )
+            build_jobs = os.environ.get("F08_DOCKER_BUILD_JOBS", "1")
+            run_idf_and_log(
+                ["build"],
+                build_log,
+                esp_project_dir=esp_project_dir,
+                cmake_parallel_level=build_jobs,
+                docker_memory_limit=docker_memory_limit,
+                docker_memory_swap=docker_memory_swap,
+                docker_cpus=docker_cpus,
+            )
 
         export_platform_build_artifacts(variant_dir, esp_project_dir, platform)
 
@@ -927,15 +937,18 @@ def main():
             print("\n[F08] Build-only completado con éxito.")
             return
 
-        print("\n=== FLASH ===")
-        flash_portable(
-            port=port,
-            flash_log=flash_log,
-            esp_project_dir=esp_project_dir,
-            docker_memory_limit=docker_memory_limit,
-            docker_memory_swap=docker_memory_swap,
-            docker_cpus=docker_cpus,
-        )
+        if not args.skip_flash:
+            print("\n=== FLASH ===")
+            flash_portable(
+                port=port,
+                flash_log=flash_log,
+                esp_project_dir=esp_project_dir,
+                docker_memory_limit=docker_memory_limit,
+                docker_memory_swap=docker_memory_swap,
+                docker_cpus=docker_cpus,
+            )
+        else:
+            print("\n=== FLASH (SALTADO POR --skip-flash) ===")
 
         print("\n=== RUN ===")
 
@@ -967,4 +980,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    

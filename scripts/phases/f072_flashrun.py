@@ -24,6 +24,7 @@ from scripts.core.artifacts import PROJECT_ROOT, get_variant_dir
 PHASE = "f07_modval"
 IDF_DOCKER_IMAGE = "mlops4ofp-idf:6.0"
 FLASH_RETRY_ATTEMPTS = 3
+DEFAULT_FLASH_BAUD = 115200
 
 # ── Límites del contenedor Docker de build ────────────────────────────────────
 # None  → usa toda la RAM disponible del sistema (comportamiento por defecto)
@@ -76,8 +77,10 @@ def run_and_log(
             raise KeyboardInterrupt
 
         if process.returncode != 0:
+            tail = _tail_text(log_path, max_lines=200)
             raise RuntimeError(
-                f"[F07] Command failed ({process.returncode}): {' '.join(cmd)}"
+                f"[F07] Command failed ({process.returncode}): {' '.join(cmd)}\n"
+                f"[F07] Últimas líneas de {log_path}:\n{tail}"
             )
 
 
@@ -152,6 +155,8 @@ def looks_like_connection_failure(log_path: Path, extra_text: str = "") -> bool:
         "chip is",
         "invalid head of packet",
         "wrong boot mode",
+        "chip stopped responding",
+        "stopiteration",
     )
     return any(pattern in text for pattern in patterns)
 
@@ -159,6 +164,15 @@ def looks_like_connection_failure(log_path: Path, extra_text: str = "") -> bool:
 def get_host_user_spec() -> str:
     """Devuelve UID:GID del proceso host para ejecutar Docker sin root."""
     return f"{os.getuid()}:{os.getgid()}"
+
+def get_host_uid() -> str:
+    """Devuelve UID del proceso host para restaurar ownership del volumen."""
+    return str(os.getuid())
+
+
+def get_host_gid() -> str:
+    """Devuelve GID del proceso host para restaurar ownership del volumen."""
+    return str(os.getgid())
 
 
 def get_serial_device_gid(port: str | None) -> str | None:
@@ -170,7 +184,6 @@ def get_serial_device_gid(port: str | None) -> str | None:
     except OSError:
         return None
 
-
 def build_idf_command(
     idf_args: list[str],
     esp_project_dir: Path,
@@ -180,21 +193,51 @@ def build_idf_command(
     docker_memory_swap: str | None = None,
     docker_cpus: str | None = None,
 ) -> list[str]:
-    """Construye comando para ejecutar idf.py en Docker (obligatorio)."""
+    """Construye comando para ejecutar idf.py en Docker.
+
+    Se ejecuta como root dentro del contenedor para evitar problemas de ownership
+    con /opt/esp/idf, pero al finalizar devuelve la propiedad de los artefactos
+    generados en /project al usuario del runner.
+    """
     quoted_args = " ".join(shlex.quote(arg) for arg in idf_args)
+
     parallel_prefix = ""
     if cmake_parallel_level is not None:
         level = shlex.quote(str(cmake_parallel_level))
         parallel_prefix = f"export CMAKE_BUILD_PARALLEL_LEVEL={level} && "
 
-    shell_cmd = (
+    # Rutas generadas por ESP-IDF que pueden quedar como root en el volumen.
+    # Incluyo /project/build y ficheros típicos modificados por idf.py.
+    fix_owner_cmd = (
+        'chown -R "$HOST_UID:$HOST_GID" '
+        '/project/build '
+        '/project/build_generated '
+        '/project/sdkconfig '
+        '/project/dependencies.lock '
+        '/project/managed_components '
+        '2>/dev/null || true'
+    )
+
+    idf_cmd = (
         "source /opt/esp/idf/export.sh >/dev/null 2>&1 && "
         f"{parallel_prefix}idf.py {quoted_args}"
     )
 
+    # Importante:
+    # - Capturamos rc para no ocultar errores reales de idf.py.
+    # - Ejecutamos chown aunque idf.py falle.
+    # - Salimos con el mismo rc original.
+    shell_cmd = (
+        f"{idf_cmd}; "
+        "rc=$?; "
+        f"{fix_owner_cmd}; "
+        "exit $rc"
+    )
+
     cmd = [
         "docker", "run", "--rm", "-i",
-        "--user", get_host_user_spec(),
+        "-e", f"HOST_UID={get_host_uid()}",
+        "-e", f"HOST_GID={get_host_gid()}",
         "-v", f"{esp_project_dir.resolve()}:/project",
         "-w", "/project",
         "--entrypoint", "/bin/bash",
@@ -211,9 +254,6 @@ def build_idf_command(
 
     if port:
         cmd.extend(["--device", f"{port}:{port}"])
-        serial_gid = get_serial_device_gid(port)
-        if serial_gid:
-            cmd.extend(["--group-add", serial_gid])
 
     cmd.extend([IDF_DOCKER_IMAGE, "-lc", shell_cmd])
     return cmd
@@ -243,13 +283,10 @@ def run_idf_and_log(
 
 def can_map_docker_device(port: str, image_name: str) -> tuple[bool, str]:
     """Valida que Docker puede mapear el dispositivo serie indicado."""
-    serial_gid = get_serial_device_gid(port)
     probe = subprocess.run(
         [
             "docker", "run", "--rm",
-            "--user", get_host_user_spec(),
             "--device", f"{port}:{port}",
-            *(["--group-add", serial_gid] if serial_gid else []),
             "--entrypoint", "/bin/bash",
             image_name,
             "-lc", f"test -e {shlex.quote(port)}",
@@ -266,14 +303,14 @@ def can_map_docker_device(port: str, image_name: str) -> tuple[bool, str]:
     stderr = (probe.stderr or "").strip()
     return False, stderr
 
-
 def run_host_esptool_flash(port: str, esp_project_dir: Path, flash_log: Path) -> bool:
     build_dir = esp_project_dir / "build"
     flash_args = build_dir / "flash_args"
     if not flash_args.exists():
         return False
 
-    print("[F07] Intentando flash en host con esptool")
+    flash_baud = os.environ.get("F07_FLASH_BAUD", str(DEFAULT_FLASH_BAUD))
+    print(f"[F07] Intentando flash en host con esptool a {flash_baud} baud")
     rc, _ = run_and_log_result(
         [
             sys.executable,
@@ -284,7 +321,7 @@ def run_host_esptool_flash(port: str, esp_project_dir: Path, flash_log: Path) ->
             "-p",
             port,
             "-b",
-            "460800",
+            flash_baud,
             "--before",
             "default-reset",
             "--after",
@@ -350,10 +387,11 @@ def flash_portable(
     docker_ok, docker_err = can_map_docker_device(port, IDF_DOCKER_IMAGE)
 
     if docker_ok:
-        print("[F07] Flash vía Docker")
+        flash_baud = os.environ.get("F07_FLASH_BAUD", str(DEFAULT_FLASH_BAUD))
+        print(f"[F07] Flash vía Docker a {flash_baud} baud")
         def docker_flash_once():
             run_idf_and_log(
-                ["-p", port, "flash"],
+                ["-p", port, "-b", flash_baud, "flash"],
                 flash_log,
                 esp_project_dir=esp_project_dir,
                 port=port,
@@ -745,6 +783,17 @@ def serial_send_and_monitor(
     print(f"[F07-serial] Drenado final: {post_wait_s:.2f}s")
     print("[F07-serial] Progreso: '*' cada 100 líneas enviadas (10 '*' por línea)")
 
+    if not Path(port).exists():
+        raise RuntimeError(
+            f"[F07-serial] El puerto serie no existe: {port}\n"
+            "[F07-serial] Si usas ESP32 virtual, arranca primero socat+QEMU:\n"
+            "  make esp32-virt-start VARIANT=<variant>\n"
+            "[F07-serial] Diagnóstico:\n"
+            "  ls -l /dev/ttyVUSB0\n"
+            "  cat /tmp/esp32-virt/socat.log\n"
+            "  cat /tmp/esp32-virt/qemu.log"
+        )
+
     ser = serial.Serial(port, baud, timeout=0)
 
     # Espera arranque tras flash
@@ -878,6 +927,7 @@ def main():
     parser.add_argument("--drain-seconds", type=float, default=None)
     parser.add_argument("--build-only", action="store_true")
     parser.add_argument("--no-clean-build", action="store_true")
+    parser.add_argument("--skip-flash", action="store_true", help="Omite el flasheo mediante esptool (requerido para QEMU)")
     args = parser.parse_args()
 
     try:
@@ -987,37 +1037,43 @@ def main():
         # =========================================================
         # BUILD
         # =========================================================
-        print("\n=== BUILD ===")
-        if not args.no_clean_build:
-            build_dir = esp_project_dir / "build"
-            if build_dir.exists():
-                shutil.rmtree(build_dir)
-                print(f"[F07] build limpio: {build_dir}")
+        if args.skip_flash:
+            print("\n=== BUILD (SALTADO) ===")
+            docker_memory_limit = resolve_docker_memory_limit()
+            docker_memory_swap = resolve_docker_memory_swap()
+            docker_cpus = resolve_docker_cpus()
+        else:
+            print("\n=== BUILD ===")
+            if not args.no_clean_build:
+                build_dir = esp_project_dir / "build"
+                if build_dir.exists():
+                    shutil.rmtree(build_dir)
+                    print(f"[F07] build limpio: {build_dir}")
 
-        sync_generated_sources_for_build(esp_project_dir)
-        sanitize_sdkconfig_for_docker(esp_project_dir)
-        ensure_docker_image_exists(IDF_DOCKER_IMAGE)
-        docker_memory_limit = resolve_docker_memory_limit()
-        docker_memory_swap = resolve_docker_memory_swap()
-        docker_cpus = resolve_docker_cpus()
+            sync_generated_sources_for_build(esp_project_dir)
+            sanitize_sdkconfig_for_docker(esp_project_dir)
+            ensure_docker_image_exists(IDF_DOCKER_IMAGE)
+            docker_memory_limit = resolve_docker_memory_limit()
+            docker_memory_swap = resolve_docker_memory_swap()
+            docker_cpus = resolve_docker_cpus()
 
-        if docker_memory_limit:
-            print(f"[F07] Docker memory limit por defecto: {docker_memory_limit}")
-        if docker_memory_swap:
-            print(f"[F07] Docker memory-swap: {docker_memory_swap}")
-        if docker_cpus:
-            print(f"[F07] Docker cpus: {docker_cpus}")
+            if docker_memory_limit:
+                print(f"[F07] Docker memory limit por defecto: {docker_memory_limit}")
+            if docker_memory_swap:
+                print(f"[F07] Docker memory-swap: {docker_memory_swap}")
+            if docker_cpus:
+                print(f"[F07] Docker cpus: {docker_cpus}")
 
-        build_jobs = os.environ.get("F07_DOCKER_BUILD_JOBS", "1")
-        run_idf_and_log(
-            ["build"],
-            build_log,
-            esp_project_dir=esp_project_dir,
-            cmake_parallel_level=build_jobs,
-            docker_memory_limit=docker_memory_limit,
-            docker_memory_swap=docker_memory_swap,
-            docker_cpus=docker_cpus,
-        )
+            build_jobs = os.environ.get("F07_DOCKER_BUILD_JOBS", "1")
+            run_idf_and_log(
+                ["build"],
+                build_log,
+                esp_project_dir=esp_project_dir,
+                cmake_parallel_level=build_jobs,
+                docker_memory_limit=docker_memory_limit,
+                docker_memory_swap=docker_memory_swap,
+                docker_cpus=docker_cpus,
+            )
 
         if args.build_only:
             print("\n[F07] Build-only completado con éxito.")
@@ -1026,15 +1082,18 @@ def main():
         # =========================================================
         # FLASH
         # =========================================================
-        print("\n=== FLASH ===")
-        flash_portable(
-            port=port,
-            flash_log=flash_log,
-            esp_project_dir=esp_project_dir,
-            docker_memory_limit=docker_memory_limit,
-            docker_memory_swap=docker_memory_swap,
-            docker_cpus=docker_cpus,
-        )
+        if not args.skip_flash:
+            print("\n=== FLASH ===")
+            flash_portable(
+                port=port,
+                flash_log=flash_log,
+                esp_project_dir=esp_project_dir,
+                docker_memory_limit=docker_memory_limit,
+                docker_memory_swap=docker_memory_swap,
+                docker_cpus=docker_cpus,
+            )
+        else:
+            print("\n=== FLASH (SALTADO POR --skip-flash) ===")
 
         # =========================================================
         # RUN

@@ -3,6 +3,12 @@
 F07 — MODEL VALIDATION (EDGE) — PREPARE BUILD
 """
 
+# True  → memory_events.h embeds the full dataset (or max_rows rows) in the binary.
+# False → memory_events.h gets a 1-row placeholder; use serial mode for validation.
+# NOTE: with 2MB flash / 1MB app partition, max safe max_rows ≈ 10000 (~56 bytes/row
+# compiled). Default max_rows in params.yaml of 5000 → ~584KB binary, well within limit.
+# Full dataset (~35K rows) → ~2.2MB binary → overflow. Do NOT embed full dataset.
+EMBED_DATASET = False
 import argparse
 import shutil
 from pathlib import Path
@@ -177,14 +183,20 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--variant", required=True)
+    parser.add_argument(
+        "--virtual",
+        action="store_true",
+        help="Fuerza QEMU; normalmente se usa parameters.virtual de params.yaml",
+    )
     args = parser.parse_args()
 
     variant = args.variant
 
     params_data = load_variant_params(get_variant_dir, PHASE, variant, "F07")
     params = params_data.get("parameters", {})
+    virtualized = bool(params.get("virtual", False)) or args.virtual
 
-    time_scale = float(params.get("time_scale_factor", 1.0))
+    time_scale = float(params.get("time_scale_factor", 0.01))
 
     parent_variant = params_data.get("parent")
 
@@ -378,7 +390,13 @@ def main():
     csv_variant = variant_dir / "07_input_dataset.csv"
     csv_project = edge_project_dir / "data" / "input_dataset.csv"
 
-    copy_dataset_to_csv(calib_path, csv_variant, csv_project, allow_csv=False)
+    copy_dataset_to_csv(
+        calib_path,
+        csv_variant,
+        csv_project,
+        allow_csv=False,
+        max_rows=max_rows,
+    )
 
     evaluation_dataset_variant = variant_dir / "07_evaluation_dataset.csv"
     copy_or_convert_dataset_to_csv(
@@ -396,7 +414,7 @@ def main():
         csv_variant,
         memory_events_path,
         event_type_count=event_type_count,
-        max_rows=max_rows,
+        max_rows=max_rows if EMBED_DATASET else 1,
     )
 
     recommended_drain_seconds = compute_recommended_drain_seconds(
@@ -411,6 +429,7 @@ def main():
         "phase": PHASE,
         "variant": variant,
         "platform": platform,
+        "virtualized": virtualized,
         "execution": {
             "project_dir": project_dir_name,
             "runner_dir": runner_dir_name,
