@@ -1773,8 +1773,95 @@ help8:
 	@echo "====================================================================="
 
 
-help: help-setup help1 help2 help3 help4 help5 help6 help7 help8	
+help: help-setup help1 help2 help3 help4 help5 help6 help7 help8
 	@echo "==============================================="
+
+############################################
+# DATA — add file to DVC and push
+############################################
+
+DATA_FILE ?=
+
+dvc-add-datafile:
+	@test -n "$(DATA_FILE)" || (echo "[ERROR] You must specify DATA_FILE=<path/to/file>"; exit 1)
+	@echo "==> Adding $(DATA_FILE) to DVC"
+	$(DVC) add $(DATA_FILE)
+	@echo "==> Staging DVC pointer and .gitignore"
+	@git add "$(DATA_FILE).dvc"
+	@git add "$$(dirname "$(DATA_FILE)")/.gitignore" 2>/dev/null || true
+	@git add .gitignore 2>/dev/null || true
+	@echo "==> Committing"
+	@git commit -m "dvc: add data file $(DATA_FILE)" || true
+	@echo "==> Pushing .dvc pointer to git remote"
+	@if [ -f ".mlops4ofp/setup.yaml" ]; then \
+		PUBLISH_REMOTE="$$($(PYTHON_LOCAL) -c 'import yaml,pathlib; cfg=yaml.safe_load(pathlib.Path(".mlops4ofp/setup.yaml").read_text()); print(cfg.get("git",{}).get("publish_remote_name","origin"))')"; \
+		PUBLISH_BRANCH="$$($(PYTHON_LOCAL) -c 'import yaml,pathlib; cfg=yaml.safe_load(pathlib.Path(".mlops4ofp/setup.yaml").read_text()); print(cfg.get("git",{}).get("branch","main"))')"; \
+		git push "$$PUBLISH_REMOTE" "HEAD:$$PUBLISH_BRANCH" || true; \
+	else \
+		echo "[INFO] .mlops4ofp/setup.yaml not found — skipping git push"; \
+	fi
+	@echo "==> Pushing data to DVC remote"
+	$(DVC) push -r storage || true
+
+############################################
+# SETUP-BRANCH — create branch + setup + push data
+############################################
+# make setup-branch SETUP_CFG=setup/remote3.yaml DATA_FILE=data/raw.csv
+
+setup-branch:
+	@test -n "$(SETUP_CFG)" || (echo "[ERROR] You must specify SETUP_CFG=<file.yaml>"; exit 1)
+	@test -n "$(DATA_FILE)" || (echo "[ERROR] You must specify DATA_FILE=<path/to/file>"; exit 1)
+	@set -eu; \
+	BRANCH="$$($(PYTHON_LOCAL) -c 'import yaml; print(yaml.safe_load(open("$(SETUP_CFG)")).get("git",{}).get("branch","main"))')"; \
+	echo "==> Creating/switching to branch: $$BRANCH"; \
+	git checkout -b "$$BRANCH" 2>/dev/null || git checkout "$$BRANCH"; \
+	$(MAKE) setup SETUP_CFG=$(SETUP_CFG); \
+	$(MAKE) dvc-add-datafile DATA_FILE=$(DATA_FILE)
+
+############################################
+# TEARDOWN-BRANCH — purge DVC remote, delete branch, reset setup
+############################################
+
+teardown-branch:
+	@test -f ".mlops4ofp/setup.yaml" || (echo "[ERROR] .mlops4ofp/setup.yaml not found — run 'make setup' first or already torn down"; exit 1)
+	@set -eu; \
+	BRANCH="$$($(PYTHON_LOCAL) -c 'import yaml; print(yaml.safe_load(open(".mlops4ofp/setup.yaml")).get("git",{}).get("branch","main"))')"; \
+	PUBLISH_REMOTE="$$($(PYTHON_LOCAL) -c 'import yaml; print(yaml.safe_load(open(".mlops4ofp/setup.yaml")).get("git",{}).get("publish_remote_name","origin"))')"; \
+	CURRENT_BRANCH="$$(git rev-parse --abbrev-ref HEAD)"; \
+	if [ "$$CURRENT_BRANCH" != "$$BRANCH" ]; then \
+		echo "[ERROR] You are on '$$CURRENT_BRANCH' but the setup branch is '$$BRANCH'."; \
+		echo "        Switch to '$$BRANCH' before running teardown-branch."; \
+		exit 1; \
+	fi; \
+	echo "==> [1/5] Removing DVC pointer(s) and cleaning local cache"; \
+	if [ -n "$(DATA_FILE)" ]; then \
+		if [ -f "$(DATA_FILE).dvc" ]; then \
+			$(DVC) remove "$(DATA_FILE).dvc" && echo "[OK] Untracked $(DATA_FILE).dvc" || echo "[WARN] dvc remove failed"; \
+		else \
+			echo "[INFO] $(DATA_FILE).dvc not found — skipping dvc remove"; \
+		fi; \
+	else \
+		DVC_FILES="$$(find . -maxdepth 3 -type f -name '*.dvc' ! -path './.dvc/*' 2>/dev/null)"; \
+		if [ -n "$$DVC_FILES" ]; then \
+			for f in $$DVC_FILES; do $(DVC) remove "$$f" || true; done; \
+			echo "[OK] Untracked all .dvc pointer files"; \
+		else \
+			echo "[INFO] No .dvc pointer files found — skipping dvc remove"; \
+		fi; \
+	fi; \
+	echo "==> [2/5] Purging local DVC cache"; \
+	$(DVC) gc --force -w 2>&1 || echo "[WARN] dvc gc failed"; \
+	echo "[INFO] NOTE: dvc gc --cloud is not supported for HTTP remotes (DagHub)."; \
+	echo "[INFO]       To free remote storage, delete data manually at https://dagshub.com"; \
+	echo "==> [3/5] Switching to main"; \
+	git checkout main; \
+	echo "==> [4/5] Deleting local branch '$$BRANCH'"; \
+	git branch -D "$$BRANCH"; \
+	echo "==> [5/5] Deleting remote branch '$$BRANCH' (if pushed)"; \
+	git push "$$PUBLISH_REMOTE" --delete "$$BRANCH" 2>/dev/null || echo "[INFO] Remote branch '$$BRANCH' not found or already deleted — skipping"
+	@echo "==> Cleaning setup artifacts"
+	@$(MAKE) clean-setup
+	@echo "[OK] Branch teardown complete."
 
 .PHONY: \
 	setup check-setup clean-setup \
@@ -1786,7 +1873,8 @@ help: help-setup help1 help2 help3 help4 help5 help6 help7 help8
 	check1 check2 check3 check4 check5 check6 check7 check8 \
 	register1 register2 register3 register4 register5 register6 register7 register8 \
 	remove1 remove2 remove3 remove4 remove5 remove6 remove7 remove8 \
-	help1 help2 help3 help4 help5 help6 help7 help8
+	help1 help2 help3 help4 help5 help6 help7 help8 \
+	dvc-add-datafile setup-branch teardown-branch
 
 ############################################
 # Utils
