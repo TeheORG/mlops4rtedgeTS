@@ -1,0 +1,58 @@
+phase: f04_targets
+variant: v4_0020
+artifacts:
+  dataset:
+    path: 04_targets.parquet
+    sha256: a3a41692311e9a6ccbf2bfb0eb9264ff9d80bddec4341287f5c24c600569c6e1
+  report:
+    path: 04_targets_report.html
+    sha256: 8c5eaf0f19bfb5ec85ca649143d04c2c668dc0cfb69865dfcff7518077d3ac97
+exports:
+  Tu: 10
+  OW: 50
+  LT: 10
+  PW: 10
+  prediction_name: inlet_temperature_of_chilled_water_low_20
+  event_strategy: threshold
+  label_rule: any(PW_values low threshold)
+  input_window_column: OW_values
+  measure_name: Inlet_Temperature_of_Chilled_Water
+  value_col: value
+  direction: low
+  threshold_percentage: 20.0
+  threshold_value: 11.860000200000002
+  min_value: 5.9
+  max_value: 35.700001
+  window_strategy: synchro
+  parent_f03: v3_0005
+  parent_f02: v2_0005
+  n_windows: 3881762
+  n_windows_pos: 1049942
+  n_windows_neg: 2831820
+  positive_ratio: 0.27048077651334623
+  negative_ratio: 0.7295192234866538
+  class_balance_ratio: 0.27048077651334623
+  deduplication_stats:
+    total_sequences: 3881762
+    unique_ow_sequences: 3021403
+    num_duplicate_sequences: 860359
+    duplicate_ratio: 0.2216413577133271
+    ambiguous_sequences: null
+    ambiguous_samples: null
+    ambiguous_ratio: null
+    avg_label_consistency_per_ow: null
+    source: parent_f03
+  unique_ratio: 0.778358642286673
+  dup_ratio_ow_parent: 0.22164135771332705
+  dup_ratio_pw_parent: 0.9288926008343634
+  seq_len_mean_ow_parent: 49.990223511900005
+metrics:
+  execution_time: 6.045354508999992
+  positive_ratio: 0.27048077651334623
+  negative_ratio: 0.7295192234866538
+  n_windows: 3881762
+  n_windows_pos: 1049942
+  n_windows_neg: 2831820
+  threshold_value: 11.860000200000002
+provenance:
+  generated_at: '2026-06-20T12:32:58.350341+00:00'
