@@ -1,0 +1,13 @@
+phase: f04_targets
+variant: v4_0006
+parent: v3_0002
+parameters:
+  parent_variant: v3_0002
+  Tu: 10
+  OW: 50
+  LT: 10
+  PW: 10
+  prediction_name: outlet_temperature_high_80
+  event_strategy: threshold
+  threshold: 80.0
+  direction: high
