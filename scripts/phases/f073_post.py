@@ -655,6 +655,10 @@ def write_outputs_yaml(
         run_block = model_profile.get("run", {}) or {}
         quality_block = model_profile.get("quality", {}) or {}
 
+        timing_block = model_profile.get("timing", {}) or {}
+        memory_block = model_profile.get("memory", {}) or {}
+        outcomes_block = model_profile.get("outcomes", {}) or {}
+
         exports.update(
             {
                 "model_id": model_block.get("model_id"),
@@ -669,18 +673,43 @@ def write_outputs_yaml(
                 "operators": build_block.get("operators"),
                 "decision_threshold": build_block.get("decision_threshold"),
                 "arena_bytes": build_block.get("arena_bytes"),
-                "model_memory_bytes": (model_profile.get("memory", {}) or {}).get("model_memory_bytes"),
-                "itmax_ms": (model_profile.get("timing", {}) or {}).get("itmax_ms", limits_block.get("itmax_ms")),
+                "model_memory_bytes": memory_block.get("model_memory_bytes"),
+                "itmax_ms": timing_block.get("itmax_ms", limits_block.get("itmax_ms")),
                 "ITmax": limits_block.get("ITmax"),
                 "MTI_MS": limits_block.get("MTI_MS"),
-                "quality_score": quality_block.get("quality_score"),
-                "n_inferences": run_block.get("n_inferences"),
-                "ok_rate": run_block.get("ok_rate"),
-                "offload_rate": run_block.get("offload_rate"),
-                "watchdog_rate": run_block.get("watchdog_rate"),
                 "edge_run_completed": bool(
                     run_block.get("edge_run_completed", run_block.get("esp_run_completed", False))
                 ),
+                "model_stats": {
+                    "quality_score": quality_block.get("quality_score"),
+                    "n_inferences": run_block.get("n_inferences"),
+                    "ok_rate": run_block.get("ok_rate"),
+                    "offload_rate": run_block.get("offload_rate"),
+                    "watchdog_rate": run_block.get("watchdog_rate"),
+                    "n_attempts": outcomes_block.get("n_attempts"),
+                    "n_ok": outcomes_block.get("n_ok"),
+                    "n_fail": outcomes_block.get("n_fail"),
+                    "timing": {
+                        "edge_mean_latency_ms": timing_block.get("edge_mean_latency_ms"),
+                        "edge_max_latency_ms": timing_block.get("edge_max_latency_ms"),
+                        "edge_jitter_ms": timing_block.get("edge_jitter_ms"),
+                    },
+                    "memory": {
+                        "edge_memory_peak_bytes": memory_block.get("edge_memory_peak_bytes"),
+                    },
+                    "quality": {
+                        "tp": quality_block.get("tp"),
+                        "fp": quality_block.get("fp"),
+                        "tn": quality_block.get("tn"),
+                        "fn": quality_block.get("fn"),
+                        "accuracy": quality_block.get("accuracy"),
+                        "precision": quality_block.get("precision"),
+                        "recall": quality_block.get("recall"),
+                        "f1": quality_block.get("f1"),
+                        "false_negative_rate": quality_block.get("false_negative_rate"),
+                        "pc_esp_agreement": quality_block.get("pc_esp_agreement"),
+                    },
+                },
             }
         )
 

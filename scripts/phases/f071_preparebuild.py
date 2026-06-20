@@ -3,12 +3,9 @@
 F07 — MODEL VALIDATION (EDGE) — PREPARE BUILD
 """
 
-# True  → memory_events.h embeds the full dataset (or max_rows rows) in the binary.
-# False → memory_events.h gets a 1-row placeholder; use serial mode for validation.
-# NOTE: with 2MB flash / 1MB app partition, max safe max_rows ≈ 10000 (~56 bytes/row
-# compiled). Default max_rows in params.yaml of 5000 → ~584KB binary, well within limit.
-# Full dataset (~35K rows) → ~2.2MB binary → overflow. Do NOT embed full dataset.
-EMBED_DATASET = False
+# memory_events.h embebe max_rows filas del dataset en el binario (modo memoria).
+# NOTE: con 2MB flash / 1MB app partition, max_rows seguro ≈ 10000 (~56 bytes/fila
+# compilada). Default max_rows en params.yaml de 5000 → ~584KB binario.
 import argparse
 import shutil
 from pathlib import Path
@@ -414,7 +411,7 @@ def main():
         csv_variant,
         memory_events_path,
         event_type_count=event_type_count,
-        max_rows=max_rows if EMBED_DATASET else 1,
+        max_rows=max_rows,
     )
 
     recommended_drain_seconds = compute_recommended_drain_seconds(

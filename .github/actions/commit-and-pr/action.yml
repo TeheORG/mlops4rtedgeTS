@@ -1,0 +1,171 @@
+name: "Commit + PR"
+description: "Empaqueta archivos modificados en una rama efímera y abre un PR"
+
+inputs:
+  variant_id:
+    required: true
+    description: "ID de la variante (ej. v0001)"
+  phase_id:
+    required: true
+    description: "ID de la fase (ej. f1, f2, ...) — usado para nombrar la rama"
+  step:
+    required: true
+    description: "Nombre del step (variant | script | check | register)"
+  paths:
+    required: true
+    description: "Paths a añadir al commit (separados por espacios, uno por línea también vale)"
+  github_token:
+    required: true
+  checkout_branch:
+    required: false
+    description: "Rama base del experimento — usada como destino del PR (prioridad sobre detección automática)"
+    default: ''
+
+outputs:
+  PR_NUMBER:
+    description: "Numero de PR creado"
+    value: ${{ steps.commit_pr.outputs.PR_NUMBER }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Commit + PR
+      id: commit_pr
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        BRANCH_NAME: "mlops/${{ inputs.phase_id }}-${{ inputs.step }}-${{ inputs.variant_id }}-${{ github.run_id }}-${{ github.run_attempt }}"
+        INPUT_CHECKOUT_BRANCH: ${{ inputs.checkout_branch }}
+      run: |
+        set -eu
+
+        # 1) Procesar paths multilinea; si una entrada es directorio, añadir su contenido
+        #    excluyendo artefactos pesados por extensión.
+        exclude_exts=()
+        if [[ -n "${REGISTER_EXCLUDE_EXTS:-}" ]]; then
+          while IFS= read -r ext || [[ -n "$ext" ]]; do
+            ext=$(printf '%s' "$ext" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            [[ -z "$ext" ]] && continue
+            ext=${ext#.}
+            [[ -n "$ext" ]] && exclude_exts+=("$ext")
+          done <<< "$REGISTER_EXCLUDE_EXTS"
+        fi
+
+        _is_excluded() {
+          local f="$1"
+          for e in "${exclude_exts[@]+"${exclude_exts[@]}"}"; do
+            case "$f" in *."$e") return 0 ;; esac
+          done
+          return 1
+        }
+
+        while IFS= read -r pattern || [[ -n "$pattern" ]]; do
+          pattern=$(printf '%s' "$pattern" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          [[ -z "$pattern" ]] && continue
+
+          if [[ -d "$pattern" ]]; then
+            while IFS= read -r -d '' file; do
+              _is_excluded "$file" && continue
+              git add -- "$file" 2>/dev/null || true
+            done < <(find "$pattern" -type f -print0)
+            continue
+          fi
+
+          for file in $pattern; do
+            [[ -e "$file" ]] || continue
+            _is_excluded "$file" && continue
+            git add -- "$file" 2>/dev/null || true
+          done
+        done <<< '${{ inputs.paths }}'
+
+        if git diff --cached --quiet; then
+          echo "[INFO] Sin cambios staged para ${{ inputs.step }} — se omite PR"
+          exit 0
+        fi
+
+        # 2) Rama efímera única
+        git checkout -b "$BRANCH_NAME"
+
+        # 3) Commit
+        git commit -m "🤖 AutoML (${{ inputs.phase_id }}/${{ inputs.step }}): ${{ inputs.variant_id }}"
+
+        # 4) Push con retry
+        for i in 1 2 3; do
+          if git push -u origin "$BRANCH_NAME"; then break; fi
+          echo "[WARN] push falló intento $i, reintento…"
+          sleep $((i * 3))
+        done
+
+        # 5) Detectar rama base: prioridad al input checkout_branch, luego archivos de config
+        BASE_BRANCH="$INPUT_CHECKOUT_BRANCH"
+
+        if [[ -z "$BASE_BRANCH" ]]; then
+          BASE_BRANCH=$(python - <<'PY'
+        import re
+        from pathlib import Path
+
+        candidates = [
+          ".mlops4ofp/setup.yaml",
+          "setup/remote.yaml",
+          "setup/remote2.yaml",
+          "setup/local.yaml",
+        ]
+
+        def parse_with_yaml(text):
+          try:
+            import yaml
+          except Exception:
+            return ""
+          try:
+            data = yaml.safe_load(text)
+            if isinstance(data, dict) and isinstance(data.get("git"), dict):
+              return str(data["git"].get("branch", "")).strip()
+          except Exception:
+            return ""
+          return ""
+
+        def parse_with_regex(text):
+          in_git = False
+          for raw in text.splitlines():
+            line = raw.rstrip()
+            if not line.strip() or line.lstrip().startswith("#"):
+              continue
+            if re.match(r"^git\s*:\s*$", line):
+              in_git = True
+              continue
+            if in_git and re.match(r"^[^\s].*:\s*", line):
+              in_git = False
+            if in_git:
+              m = re.match(r"^\s+branch\s*:\s*(.+?)\s*$", line)
+              if m:
+                return m.group(1).strip().strip("\"'")
+          return ""
+
+        for cfg in candidates:
+          p = Path(cfg)
+          if not p.exists():
+            continue
+          text = p.read_text(encoding="utf-8")
+          branch = parse_with_yaml(text) or parse_with_regex(text)
+          if branch:
+            print(branch)
+            break
+        PY
+          )
+          BASE_BRANCH=${BASE_BRANCH:-main}
+        fi
+        echo "[INFO] Base branch: $BASE_BRANCH"
+
+        # 6) Abrir PR y capturar el numero de forma fiable
+        PR_NUMBER=$(gh api -X POST "repos/${GITHUB_REPOSITORY}/pulls" \
+          -f title="🚀 AutoML ${{ inputs.phase_id }}/${{ inputs.step }}: ${{ inputs.variant_id }}" \
+          -f body="PR automática para la variante **${{ inputs.variant_id }}**, step **${{ inputs.step }}**." \
+          -f base="$BASE_BRANCH" \
+          -f head="$BRANCH_NAME" \
+          --jq '.number')
+
+        if [[ -z "$PR_NUMBER" ]]; then
+          echo "[ERROR] No se pudo obtener PR_NUMBER al crear la PR" >&2
+          exit 1
+        fi
+        echo "PR_NUMBER=$PR_NUMBER" >> "$GITHUB_OUTPUT"

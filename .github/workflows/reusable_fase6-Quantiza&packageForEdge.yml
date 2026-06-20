@@ -1,0 +1,273 @@
+name: "6️⃣♻️ Reusable: Fase 6 (Quantize & Package for Edge)"
+
+on:
+  workflow_call:
+    inputs:
+      variant_id:
+        required: true
+        type: string
+      parent_variant:
+        required: true
+        type: string
+      params_json:
+        required: true
+        type: string
+      checkout_branch:
+        required: true
+        type: string
+      runner:
+        required: false
+        type: string
+        default: '"ubuntu-latest"'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  ejecutar-fase-6:
+    runs-on: ${{ inputs.runner != '' && fromJSON(inputs.runner) || 'ubuntu-latest' }}
+    container:
+      image: ${{ vars.IMAGE_MLOPS || 'ghcr.io/tehedor/mlops_actions_v2/mlops-env:latest' }}
+    env:
+      USE_VENV: 0
+      SKIP_GIT_PUBLISH: "1"
+      SKIP_LINEAGE: "1"
+      DAGSHUB_USER: ${{ secrets.DAGSHUB_USER }}
+      DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
+      VARIANT_ROOT: executions/f06_quant/${{ inputs.variant_id }}
+      REGISTER_EXCLUDE_EXTS: |
+        .h5
+        .parquet
+        .tflite
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.checkout_branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configurar Git y DVC
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global --add safe.directory '*'
+          dvc remote modify storage --local auth basic
+          dvc remote modify storage --local user "$DAGSHUB_USER"
+          dvc remote modify storage --local password "$DAGSHUB_TOKEN"
+
+      - name: DVC Pull (Traer datos de Fase 5)
+        run: dvc pull executions/f05_modeling/${{ inputs.parent_variant }}/*.dvc
+
+      # =========================================================
+      # STEP 1: variant6
+      # =========================================================
+      - name: Crear variante Fase 6
+        env:
+          PARAMS_JSON: ${{ inputs.params_json }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          def to_make_value(value):
+              if isinstance(value, bool):
+                  return "true" if value else "false"
+              if isinstance(value, (list, dict)):
+                  return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+              return str(value)
+
+          raw = os.environ.get("PARAMS_JSON", "").strip()
+          params = json.loads(raw) if raw else {}
+
+          if isinstance(params, str):
+              try:
+                  params = json.loads(params)
+              except Exception:
+                  pass
+
+          if not isinstance(params, dict):
+              print(f"[WARN] params no es dict, asumiendo dict vacío. Type={type(params)}")
+              params = {}
+
+          extra_args = []
+          for key, value in params.items():
+              k = str(key).strip()
+              if not k:
+                  continue
+              extra_args.append(f"{k}={to_make_value(value)}")
+
+          print("Ejecutando con:", " ".join(extra_args))
+
+          subprocess.run(
+              [
+                  "make",
+                  "variant6",
+                  "VARIANT=${{ inputs.variant_id }}",
+                  "PARENT=${{ inputs.parent_variant }}",
+                  *extra_args,
+              ],
+              check=True,
+          )
+          PY
+
+      - name: PR — publicar variant
+        id: pr-variant
+        uses: TeheORG/mlops4rtedgeTS/.github/actions/commit-and-pr@test
+        with:
+          variant_id: ${{ inputs.variant_id }}
+          phase_id: f6
+          step: variant
+          paths: |
+            ${{ env.VARIANT_ROOT }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          checkout_branch: ${{ inputs.checkout_branch }}
+
+      - name: Merge PR de variant
+        if: ${{ steps.pr-variant.outputs.PR_NUMBER != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR="${{ steps.pr-variant.outputs.PR_NUMBER }}"
+          for i in 1 2 3 4 5; do
+            if gh pr merge "$PR" --squash --delete-branch; then break; fi
+            echo "[WARN] merge falló intento $i, reintento en $((i*3))s..."
+            sleep $((i * 3))
+            [[ $i -eq 5 ]] && { echo "[ERROR] Merge falló tras 5 intentos" >&2; exit 1; }
+          done
+
+      - name: Sync con base tras merge de variant
+        if: ${{ steps.pr-variant.outputs.PR_NUMBER != '' }}
+        run: |
+          git fetch origin
+          git checkout "${{ inputs.checkout_branch }}"
+          git pull --ff-only origin "${{ inputs.checkout_branch }}"
+
+      # =========================================================
+      # STEP 2: script6-a (sin Docker, compatible con contenedor CI)
+      # =========================================================
+      - name: Ejecutar script de Fase 6
+        env:
+          PYTHONFAULTHANDLER: 1
+        run: make script6-a VARIANT=${{ inputs.variant_id }}
+
+      - name: PR — publicar script
+        id: pr-script
+        uses: TeheORG/mlops4rtedgeTS/.github/actions/commit-and-pr@test
+        with:
+          variant_id: ${{ inputs.variant_id }}
+          phase_id: f6
+          step: script
+          paths: |
+            ${{ env.VARIANT_ROOT }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          checkout_branch: ${{ inputs.checkout_branch }}
+
+      - name: Merge PR de script
+        if: ${{ steps.pr-script.outputs.PR_NUMBER != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR="${{ steps.pr-script.outputs.PR_NUMBER }}"
+          for i in 1 2 3 4 5; do
+            if gh pr merge "$PR" --squash --delete-branch; then break; fi
+            echo "[WARN] merge falló intento $i, reintento en $((i*3))s..."
+            sleep $((i * 3))
+            [[ $i -eq 5 ]] && { echo "[ERROR] Merge falló tras 5 intentos" >&2; exit 1; }
+          done
+
+      - name: Sync con base tras merge de script
+        if: ${{ steps.pr-script.outputs.PR_NUMBER != '' }}
+        run: |
+          git fetch origin
+          git checkout "${{ inputs.checkout_branch }}"
+          git pull --ff-only origin "${{ inputs.checkout_branch }}"
+
+      # =========================================================
+      # STEP 3: check6
+      # =========================================================
+      - name: Verificar resultados
+        id: run-check
+        if: always()
+        run: |
+          set +e
+          make check6 VARIANT=${{ inputs.variant_id }}
+          rc=$?
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          if [ "$rc" -ne 0 ]; then
+            echo "[WARN] check6 failed with exit code $rc; continuing so verification metadata can be published"
+          fi
+          exit 0
+
+      - name: PR — publicar check
+        id: pr-check
+        if: always()
+        uses: TeheORG/mlops4rtedgeTS/.github/actions/commit-and-pr@test
+        with:
+          variant_id: ${{ inputs.variant_id }}
+          phase_id: f6
+          step: check
+          paths: |
+            ${{ env.VARIANT_ROOT }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          checkout_branch: ${{ inputs.checkout_branch }}
+
+      - name: Merge PR de check
+        if: ${{ always() && steps.pr-check.outputs.PR_NUMBER != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR="${{ steps.pr-check.outputs.PR_NUMBER }}"
+          for i in 1 2 3 4 5; do
+            if gh pr merge "$PR" --squash --delete-branch; then break; fi
+            echo "[WARN] merge falló intento $i, reintento en $((i*3))s..."
+            sleep $((i * 3))
+            [[ $i -eq 5 ]] && { echo "[ERROR] Merge falló tras 5 intentos" >&2; exit 1; }
+          done
+
+      - name: Sync con base tras merge de check
+        if: ${{ always() && steps.pr-check.outputs.PR_NUMBER != '' }}
+        run: |
+          git fetch origin
+          git checkout "${{ inputs.checkout_branch }}"
+          git pull --ff-only origin "${{ inputs.checkout_branch }}"
+
+      # =========================================================
+      # STEP 4: register6
+      # =========================================================
+      - name: Registrar resultados de F6
+        run: make register6 VARIANT=${{ inputs.variant_id }}
+
+      - name: PR — publicar register
+        id: pr-register
+        uses: TeheORG/mlops4rtedgeTS/.github/actions/commit-and-pr@test
+        with:
+          variant_id: ${{ inputs.variant_id }}
+          phase_id: f6
+          step: register
+          paths: |
+            ${{ env.VARIANT_ROOT }}
+            .dvc/config
+            dvc.yaml
+            dvc.lock
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          checkout_branch: ${{ inputs.checkout_branch }}
+
+      - name: Merge PR de register
+        if: ${{ steps.pr-register.outputs.PR_NUMBER != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR="${{ steps.pr-register.outputs.PR_NUMBER }}"
+          for i in 1 2 3 4 5; do
+            if gh pr merge "$PR" --squash --delete-branch; then break; fi
+            echo "[WARN] merge falló intento $i, reintento en $((i*3))s..."
+            sleep $((i * 3))
+            [[ $i -eq 5 ]] && { echo "[ERROR] Merge falló tras 5 intentos" >&2; exit 1; }
+          done

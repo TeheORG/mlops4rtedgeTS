@@ -1,0 +1,11 @@
+name: Test ARC direct
+on:
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: runner-8gb
+    steps:
+      - run: |
+          echo "Hello from $(hostname)"
+          echo "CPU: $(nproc)"
+          echo "RAM: $(free -h | grep Mem)"

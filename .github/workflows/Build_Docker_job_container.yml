@@ -1,0 +1,66 @@
+name: 🐋 Construir y Subir Entorno MLOps (Docker)
+
+on:
+  push:
+    branches: ["main"]
+    # Solo se dispara si cambian estos archivos que definen el entorno
+    paths:
+      - '.github/github_container_job/Dockerfile'
+      - '**/requirements.txt'
+  # Permite lanzar este workflow manualmente desde la pestaña Actions de GitHub
+  workflow_dispatch:
+
+# ======================================================================
+# VARIABLES DE ENTORNO PRINCIPALES
+# ======================================================================
+env:
+  # Registro nativo de GitHub (Gratis para repos públicos)
+  REGISTRY: ghcr.io
+  # El nombre de tu imagen será: ghcr.io/tu-usuario/tu-repo/mlops-env
+  IMAGE_NAME: ${{ github.repository }}/mlops-env
+
+jobs:
+  build-and-push-image:
+    runs-on: ubuntu-latest
+    
+    # IMPORTANTE: Estos permisos son los que permiten que GitHub suba el 
+    # contenedor sin que tengas que configurar contraseñas manualmente.
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Iniciar sesión en GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          # GITHUB_TOKEN es una clave mágica que GitHub genera sola. ¡No tienes que crearla!
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extraer metadatos (etiquetas) para Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Configurar Buildx (Motor de Docker avanzado)
+        uses: docker/setup-buildx-action@v3
+
+      - name: Construir y subir imagen Docker
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: .github/github_container_job/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Usa la caché de GitHub Actions para que construir el Docker sea más rápidoo
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
