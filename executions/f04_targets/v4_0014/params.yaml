@@ -1,0 +1,13 @@
+phase: f04_targets
+variant: v4_0014
+parent: v3_0004
+parameters:
+  parent_variant: v3_0004
+  Tu: 10
+  OW: 50
+  LT: 10
+  PW: 10
+  prediction_name: mg_lv_msb_ac_voltage_high_80
+  event_strategy: threshold
+  threshold: 80.0
+  direction: high
