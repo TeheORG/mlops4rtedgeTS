@@ -1,0 +1,58 @@
+phase: f04_targets
+variant: v4_0006
+artifacts:
+  dataset:
+    path: 04_targets.parquet
+    sha256: 6c98c4c9d787ae350e06617693a46e20ba13dbfd23a65cc8c6fc8bc151ee1c76
+  report:
+    path: 04_targets_report.html
+    sha256: 1d54d656c59907e02bea7b81b0c2b4fb6b51f8e79b5693e58907ff8edacd556d
+exports:
+  Tu: 10
+  OW: 50
+  LT: 10
+  PW: 10
+  prediction_name: outlet_temperature_high_80
+  event_strategy: threshold
+  label_rule: any(PW_values high threshold)
+  input_window_column: OW_values
+  measure_name: Outlet_Temperature
+  value_col: value
+  direction: high
+  threshold_percentage: 80.0
+  threshold_value: 27.520000000000003
+  min_value: 5.6
+  max_value: 33.0
+  window_strategy: synchro
+  parent_f03: v3_0002
+  parent_f02: v2_0002
+  n_windows: 3882214
+  n_windows_pos: 394861
+  n_windows_neg: 3487353
+  positive_ratio: 0.10171026120662076
+  negative_ratio: 0.8982897387933793
+  class_balance_ratio: 0.10171026120662076
+  deduplication_stats:
+    total_sequences: 3882214
+    unique_ow_sequences: 3591204
+    num_duplicate_sequences: 291010
+    duplicate_ratio: 0.07495980386449588
+    ambiguous_sequences: null
+    ambiguous_samples: null
+    ambiguous_ratio: null
+    avg_label_consistency_per_ow: null
+    source: parent_f03
+  unique_ratio: 0.9250401961355041
+  dup_ratio_ow_parent: 0.07495980386449586
+  dup_ratio_pw_parent: 0.8678581345593004
+  seq_len_mean_ow_parent: 49.99022465016097
+metrics:
+  execution_time: 6.262063862000005
+  positive_ratio: 0.10171026120662076
+  negative_ratio: 0.8982897387933793
+  n_windows: 3882214
+  n_windows_pos: 394861
+  n_windows_neg: 3487353
+  threshold_value: 27.520000000000003
+provenance:
+  generated_at: '2026-06-20T12:23:52.289889+00:00'
