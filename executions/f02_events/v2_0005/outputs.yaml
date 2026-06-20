@@ -1,0 +1,41 @@
+phase: f02_events
+variant: v2_0005
+artifacts:
+  series:
+    path: 02_series.parquet
+    sha256: c3c7f5c90cb3f86bb6b07cd00d6b5e5bb6f30851938513551bdfe3c0ca4bfbfc
+  stats:
+    path: 02_series_stats.json
+    sha256: be10487cc85e0156d36fd3d201b7666a7aff02cb68b2c8ba369309f36714aca2
+  report:
+    path: 02_series_report.html
+    sha256: 17210b0d909640d8b40d24ef29a448ed89bfbb0f89020627d52d40992836172f
+exports:
+  Tu: 10
+  measure_name: Inlet_Temperature_of_Chilled_Water
+  epoch_col: segs
+  value_col: value
+  n_rows: 3887242
+  n_non_nan: 3884361
+  nan_ratio: 0.0007411424346619017
+metrics:
+  execution_time: 1.6036120849999946
+  n_rows: 3887242
+  n_non_nan: 3884361
+  n_nan: 2881
+  nan_ratio: 0.0007411424346619017
+  non_nan_ratio: 0.999258857565338
+  min: 5.9
+  max: 35.700001
+  mean: 18.994631621030067
+  median: 19.1
+  std: 7.947464185816033
+  q05: 7.7
+  q95: 30.6
+  positive_ratio: 1.0
+  negative_ratio: 0.0
+  zero_ratio: 0.0
+  consecutive_ratio: 0.9999971702294764
+  broken_ratio: 2.829770523618165e-06
+provenance:
+  generated_at: '2026-06-20T12:17:47.198764+00:00'
