@@ -1,0 +1,13 @@
+phase: f04_targets
+variant: v4_0012
+parent: v3_0003
+parameters:
+  parent_variant: v3_0003
+  Tu: 10
+  OW: 50
+  LT: 10
+  PW: 10
+  prediction_name: pvpcs_active_power_low_20
+  event_strategy: threshold
+  threshold: 20.0
+  direction: low
