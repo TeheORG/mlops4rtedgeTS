@@ -1,0 +1,58 @@
+phase: f04_targets
+variant: v4_0001
+artifacts:
+  dataset:
+    path: 04_targets.parquet
+    sha256: 7e48d4356540c62fa47be2c4fc16d6a78a4b3bcc0c69c7ab4b4b6d10d7e97ec7
+  report:
+    path: 04_targets_report.html
+    sha256: 4bfbac6f20260737ea76b23c4dc556add9a96898c9fa9575969591cd7c3bc209
+exports:
+  Tu: 10
+  OW: 50
+  LT: 10
+  PW: 10
+  prediction_name: ge_active_power_high_90
+  event_strategy: threshold
+  label_rule: any(PW_values high threshold)
+  input_window_column: OW_values
+  measure_name: GE_Active_Power
+  value_col: value
+  direction: high
+  threshold_percentage: 90.0
+  threshold_value: 299.9
+  min_value: -601.0
+  max_value: 400.0
+  window_strategy: synchro
+  parent_f03: v3_0001
+  parent_f02: v2_0001
+  n_windows: 3882329
+  n_windows_pos: 12
+  n_windows_neg: 3882317
+  positive_ratio: 3.0909281516326926e-06
+  negative_ratio: 0.9999969090718483
+  class_balance_ratio: 3.0909281516326926e-06
+  deduplication_stats:
+    total_sequences: 3882329
+    unique_ow_sequences: 2853356
+    num_duplicate_sequences: 1028973
+    duplicate_ratio: 0.26504013441416224
+    ambiguous_sequences: null
+    ambiguous_samples: null
+    ambiguous_ratio: null
+    avg_label_consistency_per_ow: null
+    source: parent_f03
+  unique_ratio: 0.7349598655858378
+  dup_ratio_ow_parent: 0.2650401344141622
+  dup_ratio_pw_parent: 0.28743519675947093
+  seq_len_mean_ow_parent: 49.99022493972046
+metrics:
+  execution_time: 6.08889695000002
+  positive_ratio: 3.0909281516326926e-06
+  negative_ratio: 0.9999969090718483
+  n_windows: 3882329
+  n_windows_pos: 12
+  n_windows_neg: 3882317
+  threshold_value: 299.9
+provenance:
+  generated_at: '2026-06-20T12:22:52.902634+00:00'
