@@ -64,6 +64,19 @@ endif
 	@$(PYTHON_LOCAL) $(SETUP_PY) --config $(SETUP_CFG)
 	@mkdir -p .mlops4ofp
 	@cp $(SETUP_CFG) .mlops4ofp/setup.yaml
+	@set -e; \
+	MODE=$$($(PYTHON_LOCAL) -c 'import yaml,pathlib; cfg=yaml.safe_load(pathlib.Path(".mlops4ofp/setup.yaml").read_text()); print(cfg.get("git",{}).get("mode","none"))'); \
+	if [ "$$MODE" = "custom" ]; then \
+		PUBLISH_REMOTE=$$($(PYTHON_LOCAL) -c 'import yaml,pathlib; cfg=yaml.safe_load(pathlib.Path(".mlops4ofp/setup.yaml").read_text()); print(cfg.get("git",{}).get("publish_remote_name","publish"))'); \
+		PUBLISH_BRANCH=$$($(PYTHON_LOCAL) -c 'import yaml,pathlib; cfg=yaml.safe_load(pathlib.Path(".mlops4ofp/setup.yaml").read_text()); print(cfg.get("git",{}).get("branch","main"))'); \
+		echo "==> Committing setup artifacts"; \
+		git add .mlops4ofp/ .dvc/config 2>/dev/null || true; \
+		git commit -m "setup: initialize project configuration" 2>/dev/null || echo "[INFO] Nothing new to commit"; \
+		echo "==> Pushing to $$PUBLISH_REMOTE HEAD:$$PUBLISH_BRANCH"; \
+		git push "$$PUBLISH_REMOTE" "HEAD:$$PUBLISH_BRANCH"; \
+	else \
+		echo "[INFO] git.mode=$$MODE — skipping commit and push"; \
+	fi
 
 
 check-setup:
