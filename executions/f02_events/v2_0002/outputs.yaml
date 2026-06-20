@@ -1,0 +1,41 @@
+phase: f02_events
+variant: v2_0002
+artifacts:
+  series:
+    path: 02_series.parquet
+    sha256: 19c74abaedfe3fec11776f836df40f7d975debf7564d1ca7e547320647c3a687
+  stats:
+    path: 02_series_stats.json
+    sha256: f4cee94110a6a3d6ea6bbc97a614913a3a9c0baf7c9a7fa1bae1ae259ba79bf0
+  report:
+    path: 02_series_report.html
+    sha256: ceb9451daac088aa66d8471dd2f2a7315155effaf0a80fa30d11440db99997c7
+exports:
+  Tu: 10
+  measure_name: Outlet_Temperature
+  epoch_col: segs
+  value_col: value
+  n_rows: 3887242
+  n_non_nan: 3884625
+  nan_ratio: 0.0006732279595661911
+metrics:
+  execution_time: 1.6528946610000048
+  n_rows: 3887242
+  n_non_nan: 3884625
+  n_nan: 2617
+  nan_ratio: 0.0006732279595661911
+  non_nan_ratio: 0.9993267720404339
+  min: 5.6
+  max: 33.0
+  mean: 18.73938314989323
+  median: 18.0
+  std: 6.359234117663821
+  q05: 10.2
+  q95: 28.700001
+  positive_ratio: 1.0
+  negative_ratio: 0.0
+  zero_ratio: 0.0
+  consecutive_ratio: 0.9999971702294764
+  broken_ratio: 2.829770523618165e-06
+provenance:
+  generated_at: '2026-06-20T12:17:20.526841+00:00'
