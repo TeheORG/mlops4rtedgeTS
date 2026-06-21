@@ -1,0 +1,28 @@
+phase: f06_quant
+variant: v6_0016
+parent_phase: f05_modeling
+parent_variant: v5_0016
+model_family: cnn1d
+operators:
+- CONV_2D
+- EXPAND_DIMS
+- FULLY_CONNECTED
+- LOGISTIC
+- REDUCE_MAX
+- RESHAPE
+model_size_bytes: 21440
+calibration:
+  input_sequence_column: OW_values
+  input_max_len: 50
+  normalization_mean: 484.0818176269531
+  normalization_std: 7.303620338439941
+  normalization_source: f05_train_only
+  input_representation: continuous_timeseries
+  input_dtype_train: float32
+  input_dtype_tflite: int8
+  uses_embedding: false
+  uses_event_ids: false
+generated_at: '2026-06-21T18:33:30.909770+00:00'
+runtime:
+  tflite_version: 2.15.1
+  python_platform: Linux-6.17.0-1018-azure-x86_64-with-glibc2.41
