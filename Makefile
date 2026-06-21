@@ -87,7 +87,7 @@ check-setup:
 
 clean-setup:
 	@echo "==> Removing MLflow associated with the project (if exists)"
-	@$(PYTHON_LOCAL) -c 'import yaml,pathlib,subprocess,os,shutil,json,sys;cfg_path=pathlib.Path(".mlops4ofp/setup.yaml");sys.exit(0) if not cfg_path.exists() else None;cfg=yaml.safe_load(cfg_path.read_text());ml=cfg.get("mlflow",{});sys.exit(0) if not ml.get("enabled",False) else None;uri=ml.get("tracking_uri","");(print(f"[INFO] Removing local MLflow at {path}") or shutil.rmtree(path)) if uri.startswith("file:") and os.path.exists(path:=uri.replace("file:","")) else (print("[INFO] Remote MLflow detected: removing project experiments (prefix F05_)") or [print(f"[INFO] Removing remote experiment {exp.get(\"name\",\"\")}") or subprocess.run(["mlflow","experiments","delete","--experiment-id",exp.get("experiment_id")],check=False) for exp in (experiments:=json.loads(subprocess.check_output(["mlflow","experiments","list","--format","json"]))) if exp.get("name","").startswith("F05_") and exp.get("experiment_id")] if True else None) if uri else None' 2>/dev/null || true
+	@$(PYTHON_LOCAL) -c 'import yaml,pathlib,os,shutil,sys;cfg_path=pathlib.Path(".mlops4ofp/setup.yaml");sys.exit(0) if not cfg_path.exists() else None;cfg=yaml.safe_load(cfg_path.read_text());ml=cfg.get("mlflow",{});sys.exit(0) if not ml.get("enabled",False) else None;uri=ml.get("tracking_uri","");(print(f"[INFO] Removing local MLflow at {path}") or shutil.rmtree(path)) if uri.startswith("file:") and os.path.exists(path:=uri.replace("file:","")) else (exec("import mlflow;from mlflow.tracking import MlflowClient;mlflow.set_tracking_uri(uri) if uri else None;client=MlflowClient();[print(f\"[INFO] Removing remote experiment {e.name}\") or client.delete_experiment(e.experiment_id) for e in client.search_experiments() if e.name.startswith(\"F05_\")]") if uri else None)' 2>/dev/null || true
 	@echo "==> Removing complete ML project environment"
 # 	@rm -rf .mlops4ofp .dvc .dvc_storage local_dvc_store .venv executions
 	@rm -rf .mlops4ofp .dvc .dvc_storage local_dvc_store executions
@@ -993,39 +993,8 @@ register5: check-variant-format
 		if ! command -v mlflow >/dev/null 2>&1; then \
 			echo "[INFO] MLflow CLI not found in local environment — skipping MLflow registration"; \
 		else \
-			TMP_SCRIPT=$$(mktemp mlflow_register_XXXX.py); \
-			echo 'import os,subprocess,yaml,json,pathlib,sys' > $$TMP_SCRIPT; \
-			echo 'variant=os.environ.get("VARIANT")' >> $$TMP_SCRIPT; \
-			echo 'phase=os.environ.get("PHASE5","f05_modeling")' >> $$TMP_SCRIPT; \
-			echo 'outs_path=pathlib.Path(f"executions/{phase}/{variant}/outputs.yaml")' >> $$TMP_SCRIPT; \
-			echo 'data=(yaml.safe_load(outs_path.read_text()) if outs_path.exists() else None)' >> $$TMP_SCRIPT; \
-			echo 'if data is None:' >> $$TMP_SCRIPT; \
-			echo '    print(f"[ERROR] outputs.yaml not found at {outs_path}")' >> $$TMP_SCRIPT; \
-			echo '    sys.exit(1)' >> $$TMP_SCRIPT; \
-			echo 'reg=(data.get("mlflow_registration") if isinstance(data,dict) else None)' >> $$TMP_SCRIPT; \
-			echo 'if not reg:' >> $$TMP_SCRIPT; \
-			echo '    print("[WARN] No '\''mlflow_registration'\'' block in outputs.yaml - skipping MLflow registration")' >> $$TMP_SCRIPT; \
-			echo '    sys.exit(0)' >> $$TMP_SCRIPT; \
-			echo 'experiment_name=(reg.get("experiment_name") or f"F05_{variant}")' >> $$TMP_SCRIPT; \
-			echo 'metrics=reg.get("metrics",{})' >> $$TMP_SCRIPT; \
-			echo 'params=reg.get("params",{})' >> $$TMP_SCRIPT; \
-			echo 'artifacts=reg.get("artifacts",[])' >> $$TMP_SCRIPT; \
-			echo 'subprocess.run(["mlflow","experiments","create","--experiment-name",experiment_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)' >> $$TMP_SCRIPT; \
-			echo 'exps=json.loads(subprocess.check_output(["mlflow","experiments","list","--format","json"]))' >> $$TMP_SCRIPT; \
-			echo 'exp_id=next((e.get("experiment_id") for e in exps if e.get("name")==experiment_name), None)' >> $$TMP_SCRIPT; \
-			echo 'if not exp_id:' >> $$TMP_SCRIPT; \
-			echo '    print(f"[ERROR] Could not obtain experiment_id for {experiment_name}")' >> $$TMP_SCRIPT; \
-			echo '    sys.exit(1)' >> $$TMP_SCRIPT; \
-			echo 'run=json.loads(subprocess.check_output(["mlflow","runs","create","--experiment-id",exp_id,"--format","json"]))' >> $$TMP_SCRIPT; \
-			echo 'run_id=run["info"]["run_id"]' >> $$TMP_SCRIPT; \
-			echo '[subprocess.run(["mlflow","runs","log-param","--run-id",run_id,"--key",str(k),"--value",str(v)]) for k,v in params.items()]' >> $$TMP_SCRIPT; \
-			echo '[subprocess.run(["mlflow","runs","log-metric","--run-id",run_id,"--key",str(k),"--value",str(v)]) for k,v in metrics.items()]' >> $$TMP_SCRIPT; \
-			echo '[subprocess.run(["mlflow","runs","log-artifact","--run-id",run_id,"--local-path",a]) for a in artifacts if os.path.exists(a)]' >> $$TMP_SCRIPT; \
-			echo 'data["mlflow"]={"run_id":run_id,"experiment_id":exp_id,"experiment_name":experiment_name}' >> $$TMP_SCRIPT; \
-			echo 'outs_path.write_text(yaml.safe_dump(data, sort_keys=False))' >> $$TMP_SCRIPT; \
-			echo 'print(f"[OK] MLflow run created: {run_id} (experiment: {experiment_name})")' >> $$TMP_SCRIPT; \
-			VARIANT="$$VARIANT_NORM" PHASE5="$(PHASE5)" $(PYTHON) $$TMP_SCRIPT; \
-			rm -f $$TMP_SCRIPT; \
+			MLFLOW_URI="$$($(PYTHON) -c 'import pathlib,yaml; p=pathlib.Path(".mlops4ofp/setup.yaml"); cfg=yaml.safe_load(p.read_text()); print(cfg.get("mlflow",{}).get("tracking_uri",""))')"; \
+			MLFLOW_URI="$$MLFLOW_URI" VARIANT="$$VARIANT_NORM" PHASE5="$(PHASE5)" $(PYTHON) -m scripts.core.mlflow_register; \
 		fi; \
 	else \
 		echo "[INFO] MLflow disabled in setup - skipping MLflow registration"; \
