@@ -1,0 +1,66 @@
+phase: f04_targets
+variant: v4_0068
+artifacts:
+  report:
+    path: 04_targets_report.html
+    sha256: 97f3728ddafe7912a411178e8b6d4e70dbc6c32732180665c8d4ba519231a056
+exports:
+  Tu: 10
+  OW: 90
+  LT: 10
+  PW: 10
+  prediction_name: island_mode_mccb_ac_voltage_low_20
+  event_strategy: threshold
+  label_rule: any(PW_values low threshold)
+  input_window_column: OW_values
+  measure_name: Island_mode_MCCB_AC_Voltage
+  value_col: value
+  direction: low
+  threshold_percentage: 20.0
+  threshold_value: 465.8
+  min_value: 458.0
+  max_value: 497.0
+  window_strategy: synchro
+  parent_f03: v3_0017
+  parent_f02: v2_0008
+  n_windows: 3880835
+  n_windows_pos: 83
+  n_windows_neg: 3880752
+  n_positive: 83
+  n_negative: 3880752
+  positive_ratio: 2.1387149930362925e-05
+  negative_ratio: 0.9999786128500696
+  class_balance_ratio: 2.1387149930362925e-05
+  target_compatible: false
+  incompatibility_reason: positive_ratio=0.000021 below minimum 0.001000
+  target_candidate_checks:
+  - measure: Island_mode_MCCB_AC_Voltage
+    direction: low
+  deduplication_stats:
+    total_sequences: 3880835
+    unique_ow_sequences: 3644014
+    num_duplicate_sequences: 236821
+    duplicate_ratio: 0.0610232076344395
+    ambiguous_sequences: null
+    ambiguous_samples: null
+    ambiguous_ratio: null
+    avg_label_consistency_per_ow: null
+    source: parent_f03
+  unique_ratio: 0.9389767923655605
+  dup_ratio_ow_parent: 0.06102320763443947
+  dup_ratio_pw_parent: 0.9722557130102156
+  seq_len_mean_ow_parent: 89.97219412832547
+metrics:
+  execution_time: 9.748655525000018
+  positive_ratio: 2.1387149930362925e-05
+  negative_ratio: 0.9999786128500696
+  n_windows: 3880835
+  n_windows_pos: 83
+  n_windows_neg: 3880752
+  n_positive: 83
+  n_negative: 3880752
+  target_compatible: false
+  incompatibility_reason: positive_ratio=0.000021 below minimum 0.001000
+  threshold_value: 465.8
+provenance:
+  generated_at: '2026-06-22T22:41:45.384428+00:00'
