@@ -1,0 +1,69 @@
+phase: f04_targets
+variant: v4_0072
+artifacts:
+  report:
+    path: 04_targets_report.html
+    sha256: 671a932d8ef69a28cf2a7636b79942f73845a2b49dbfb4f25489d9f545b43e3c
+  dataset:
+    path: 04_targets.parquet
+    sha256: 14705effae72fc91a1e13b6870499d9d8fa8b8c13338d365f66972a187778e7e
+exports:
+  Tu: 10
+  OW: 90
+  LT: 10
+  PW: 10
+  prediction_name: island_mode_mccb_active_power_low_20
+  event_strategy: threshold
+  label_rule: any(PW_values low threshold)
+  input_window_column: OW_values
+  measure_name: Island_mode_MCCB_Active_Power
+  value_col: value
+  direction: low
+  threshold_percentage: 20.0
+  threshold_value: -213.39999999999998
+  min_value: -316.0
+  max_value: 197.0
+  window_strategy: synchro
+  parent_f03: v3_0018
+  parent_f02: v2_0009
+  n_windows: 3880849
+  n_windows_pos: 80301
+  n_windows_neg: 3800548
+  n_positive: 80301
+  n_negative: 3800548
+  positive_ratio: 0.020691606398496824
+  negative_ratio: 0.9793083936015031
+  class_balance_ratio: 0.020691606398496824
+  target_compatible: true
+  incompatibility_reason: null
+  target_candidate_checks:
+  - measure: Island_mode_MCCB_Active_Power
+    direction: low
+  deduplication_stats:
+    total_sequences: 3880849
+    unique_ow_sequences: 3767537
+    num_duplicate_sequences: 113312
+    duplicate_ratio: 0.02919773482554977
+    ambiguous_sequences: null
+    ambiguous_samples: null
+    ambiguous_ratio: null
+    avg_label_consistency_per_ow: null
+    source: parent_f03
+  unique_ratio: 0.9708022651744502
+  dup_ratio_ow_parent: 0.02919773482554977
+  dup_ratio_pw_parent: 0.6151326681352456
+  seq_len_mean_ow_parent: 89.972194228634
+metrics:
+  execution_time: 10.139713060000005
+  positive_ratio: 0.020691606398496824
+  negative_ratio: 0.9793083936015031
+  n_windows: 3880849
+  n_windows_pos: 80301
+  n_windows_neg: 3800548
+  n_positive: 80301
+  n_negative: 3800548
+  target_compatible: true
+  incompatibility_reason: null
+  threshold_value: -213.39999999999998
+provenance:
+  generated_at: '2026-06-22T22:48:45.093125+00:00'
