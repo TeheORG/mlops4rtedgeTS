@@ -1,0 +1,69 @@
+phase: f04_targets
+variant: v4_0049
+artifacts:
+  report:
+    path: 04_targets_report.html
+    sha256: de4ab2f4832bc083bdb8180ef73eec5a5b22ed7f1dc30e1ae966e099fee71852
+  dataset:
+    path: 04_targets.parquet
+    sha256: 99c65e55b1e3f764fea2550107a2468ae933e9b18220f3325e7dcdba880cdde6
+exports:
+  Tu: 10
+  OW: 90
+  LT: 10
+  PW: 10
+  prediction_name: mg_lv_msb_ac_voltage_high_90
+  event_strategy: threshold
+  label_rule: any(PW_values high threshold)
+  input_window_column: OW_values
+  measure_name: MG-LV-MSB_AC_Voltage
+  value_col: value
+  direction: high
+  threshold_percentage: 90.0
+  threshold_value: 487.2
+  min_value: 399.0
+  max_value: 497.0
+  window_strategy: synchro
+  parent_f03: v3_0013
+  parent_f02: v2_0004
+  n_windows: 3880836
+  n_windows_pos: 883611
+  n_windows_neg: 2997225
+  n_positive: 883611
+  n_negative: 2997225
+  positive_ratio: 0.22768573575384274
+  negative_ratio: 0.7723142642461572
+  class_balance_ratio: 0.22768573575384274
+  target_compatible: true
+  incompatibility_reason: null
+  target_candidate_checks:
+  - measure: MG-LV-MSB_AC_Voltage
+    direction: high
+  deduplication_stats:
+    total_sequences: 3880836
+    unique_ow_sequences: 3641408
+    num_duplicate_sequences: 239428
+    duplicate_ratio: 0.06169495438611681
+    ambiguous_sequences: null
+    ambiguous_samples: null
+    ambiguous_ratio: null
+    avg_label_consistency_per_ow: null
+    source: parent_f03
+  unique_ratio: 0.9383050456138832
+  dup_ratio_ow_parent: 0.06169495438611683
+  dup_ratio_pw_parent: 0.97184214947501
+  seq_len_mean_ow_parent: 89.9721941354904
+metrics:
+  execution_time: 9.473683112000003
+  positive_ratio: 0.22768573575384274
+  negative_ratio: 0.7723142642461572
+  n_windows: 3880836
+  n_windows_pos: 883611
+  n_windows_neg: 2997225
+  n_positive: 883611
+  n_negative: 2997225
+  target_compatible: true
+  incompatibility_reason: null
+  threshold_value: 487.2
+provenance:
+  generated_at: '2026-06-22T22:41:26.892821+00:00'
