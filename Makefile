@@ -2018,10 +2018,89 @@ teardown-branch:
 	script7-virtualESP32 script8-virtualESP32 \
 	esp32-virt-verify esp32-virt-install esp32-virt-stop \
 	esp32-socat-start esp32-qemu-start esp32-flash-run-virtual \
-	dvc-add-datafile setup-branch teardown-branch
+	dvc-add-datafile setup-branch teardown-branch \
+	dvc-pull dvc-clean
+
+############################################
+# DVC pull artifacts for a variant
+############################################
+# Usage: make dvc-pull VARIANT=v5_0012                          # one variant
+#        make dvc-pull VARIANT=v2_0001,v1_0001,v5_0012          # several
+#        make dvc-pull VARIANT=v7                                # all phase-7 variants
+#        make dvc-pull VARIANT='v*_2*'                           # wildcard across phases
+dvc-pull:
+	@test -n "$(VARIANT)" || (echo "[ERROR] Usage: make dvc-pull VARIANT=vY_NNNN[,vY,v*_2*,...]"; exit 1)
+	@set -eu; \
+	if [ ! -f .dvc/config.local ]; then \
+		echo "[INFO] .dvc/config.local not found — configuring DVC credentials from .env"; \
+		if [ ! -f .env ]; then \
+			echo "[ERROR] .env file not found. Create it with DAGSHUB_USER and DAGSHUB_TOKEN"; exit 1; \
+		fi; \
+		DAGSHUB_USER=$$(grep -E '^DAGSHUB_USER=' .env | cut -d= -f2- | tr -d '"'"'"' '); \
+		DAGSHUB_TOKEN=$$(grep -E '^DAGSHUB_TOKEN=' .env | cut -d= -f2- | tr -d '"'"'"' '); \
+		if [ -z "$$DAGSHUB_USER" ] || [ -z "$$DAGSHUB_TOKEN" ]; then \
+			echo "[ERROR] DAGSHUB_USER and/or DAGSHUB_TOKEN not found in .env"; exit 1; \
+		fi; \
+		$(DVC) remote modify storage --local auth basic; \
+		$(DVC) remote modify storage --local user "$$DAGSHUB_USER"; \
+		$(DVC) remote modify storage --local password "$$DAGSHUB_TOKEN"; \
+		echo "[OK] DVC credentials configured"; \
+	fi; \
+	for V in $$(echo "$(VARIANT)" | tr ',' ' '); do \
+		case "$$V" in v[0-9]) V="$${V}_*" ;; esac; \
+		DPATTERN=$$(echo "$$V" | sed -n 's/^v\([0-9*?]\).*/\1/p'); \
+		if [ -z "$$DPATTERN" ]; then \
+			echo "[ERROR] Cannot parse $$V. Expected: vY_NNNN, vY, or wildcard (v*_2*)"; exit 1; \
+		fi; \
+		DIRS=$$(ls -d executions/f0$${DPATTERN}_*/$$V 2>/dev/null || true); \
+		if [ -z "$$DIRS" ]; then \
+			echo "[INFO] No variant directories matching $$V — skipping"; continue; \
+		fi; \
+		for VAR_DIR in $$DIRS; do \
+			DVC_FILES=$$(find "$$VAR_DIR" -maxdepth 1 -name '*.dvc' 2>/dev/null); \
+			if [ -z "$$DVC_FILES" ]; then \
+				echo "[INFO] No .dvc files in $$VAR_DIR — skipping"; continue; \
+			fi; \
+			echo "==> Pulling DVC artifacts for $$VAR_DIR"; \
+			$(DVC) pull $$VAR_DIR/*.dvc; \
+			echo "[OK] DVC pull complete for $$VAR_DIR"; \
+		done; \
+	done
+
+############################################
+# DVC clean: remove pulled artifacts for a variant
+############################################
+# Usage: make dvc-clean VARIANT=v5_0012                         # one variant
+#        make dvc-clean VARIANT=v2_0001,v5_0012                  # several
+#        make dvc-clean VARIANT=v7                               # all phase-7 variants
+#        make dvc-clean VARIANT='v*_2*'                          # wildcard across phases
+dvc-clean:
+	@test -n "$(VARIANT)" || (echo "[ERROR] Usage: make dvc-clean VARIANT=vY_NNNN[,vY,v*_2*,...]"; exit 1)
+	@set -eu; \
+	for V in $$(echo "$(VARIANT)" | tr ',' ' '); do \
+		case "$$V" in v[0-9]) V="$${V}_*" ;; esac; \
+		DPATTERN=$$(echo "$$V" | sed -n 's/^v\([0-9*?]\).*/\1/p'); \
+		if [ -z "$$DPATTERN" ]; then \
+			echo "[ERROR] Cannot parse $$V. Expected: vY_NNNN, vY, or wildcard (v*_2*)"; exit 1; \
+		fi; \
+		DIRS=$$(ls -d executions/f0$${DPATTERN}_*/$$V 2>/dev/null || true); \
+		if [ -z "$$DIRS" ]; then \
+			echo "[INFO] No variant directories matching $$V — skipping"; continue; \
+		fi; \
+		for VAR_DIR in $$DIRS; do \
+			for dvc_file in $$VAR_DIR/*.dvc; do \
+				[ -f "$$dvc_file" ] || continue; \
+				DATA_FILE="$${dvc_file%.dvc}"; \
+				if [ -e "$$DATA_FILE" ]; then \
+					rm -rf "$$DATA_FILE"; \
+					echo "[OK] Removed $$DATA_FILE"; \
+				fi; \
+			done; \
+		done; \
+	done
 
 ############################################
 # Utils
 ############################################
-generate_lineage: 
+generate_lineage:
 	${PYTHON} scripts/core/variants_lineage/generate_lineage.py
