@@ -33,6 +33,7 @@ from scripts.core.traceability import validate_outputs
 
 PHASE = "f02_events"  # Mantener el nombre para no romper Makefile/rutas existentes.
 PROJECT_ROOT = REPO_ROOT
+MIN_STD_FOR_MEASURE_COMPATIBILITY = 0.0
 
 
 # ============================================================
@@ -140,8 +141,6 @@ def compute_series_stats(df_series: pd.DataFrame, epoch_col: str, value_col: str
             "q99": None,
             "n_unique_values": 0,
             "zero_ratio": None,
-            "positive_ratio": None,
-            "negative_ratio": None,
         }
 
     epochs = df_series[epoch_col].to_numpy(dtype=np.int64)
@@ -345,11 +344,12 @@ def build_outputs_metrics(stats: dict, execution_time: float):
         "std": stats["std"],
         "q05": stats["q05"],
         "q95": stats["q95"],
-        "positive_ratio": stats["positive_ratio"],
-        "negative_ratio": stats["negative_ratio"],
         "zero_ratio": stats["zero_ratio"],
         "consecutive_ratio": float(stats["consecutive_ratio"]),
         "broken_ratio": float(stats["broken_ratio"]),
+        "compatible": bool(stats["compatible"]),
+        "measure_compatible": bool(stats["measure_compatible"]),
+        "incompatibility_reason": stats["incompatibility_reason"],
     }
 
 
@@ -441,6 +441,21 @@ def main():
     stats["epoch_col"] = epoch_col
     stats["value_col"] = value_col
     stats["parent_variant"] = parent_variant
+    std_value = stats.get("std")
+    measure_compatible = (
+        std_value is not None
+        and float(std_value) > MIN_STD_FOR_MEASURE_COMPATIBILITY
+    )
+    incompatibility_reason = None
+    if not measure_compatible:
+        std_text = "None" if std_value is None else f"{float(std_value):.6f}"
+        incompatibility_reason = (
+            f"std={std_text} not above minimum "
+            f"{MIN_STD_FOR_MEASURE_COMPATIBILITY:.6f}"
+        )
+    stats["compatible"] = bool(measure_compatible)
+    stats["measure_compatible"] = bool(measure_compatible)
+    stats["incompatibility_reason"] = incompatibility_reason
 
     # --------------------------------------------------------
     # Guardar artefactos
@@ -450,7 +465,11 @@ def main():
     stats_path = variant_dir / "02_series_stats.json"
     report_path = variant_dir / "02_series_report.html"
 
-    df_series.to_parquet(series_path, index=False)
+    if measure_compatible:
+        df_series.to_parquet(series_path, index=False)
+    elif series_path.exists():
+        series_path.unlink()
+
     save_json(stats_path, stats)
 
     report_html = build_report_html(
@@ -469,23 +488,26 @@ def main():
     # Construir outputs.yaml
     # --------------------------------------------------------
 
+    artifacts = {
+        "stats": {
+            "path": stats_path.name,
+            "sha256": sha256_of_file(stats_path),
+        },
+        "report": {
+            "path": report_path.name,
+            "sha256": sha256_of_file(report_path),
+        },
+    }
+    if measure_compatible:
+        artifacts["series"] = {
+            "path": series_path.name,
+            "sha256": sha256_of_file(series_path),
+        }
+
     outputs_content = {
         "phase": PHASE,
         "variant": variant,
-        "artifacts": {
-            "series": {
-                "path": series_path.name,
-                "sha256": sha256_of_file(series_path),
-            },
-            "stats": {
-                "path": stats_path.name,
-                "sha256": sha256_of_file(stats_path),
-            },
-            "report": {
-                "path": report_path.name,
-                "sha256": sha256_of_file(report_path),
-            },
-        },
+        "artifacts": artifacts,
         "exports": {
             "Tu": int(Tu) if Tu is not None else None,
             "measure_name": measure_name,
@@ -494,6 +516,9 @@ def main():
             "n_rows": int(stats["n_rows"]),
             "n_non_nan": int(stats["n_non_nan"]),
             "nan_ratio": float(stats["nan_ratio"]),
+            "compatible": bool(measure_compatible),
+            "measure_compatible": bool(measure_compatible),
+            "incompatibility_reason": incompatibility_reason,
         },
         "metrics": build_outputs_metrics(
             stats=stats,
@@ -508,9 +533,14 @@ def main():
 
     validate_outputs(PHASE, outputs_content)
 
-    print(f"\n===== FASE {PHASE} COMPLETADA =====")
+    if measure_compatible:
+        print(f"\n===== FASE {PHASE} COMPLETADA =====")
+    else:
+        print(f"[WARN] Medida incompatible: {incompatibility_reason}")
+        print(f"\n===== FASE {PHASE} COMPLETADA SIN SERIES =====")
     print(f"Medida seleccionada: {measure_name}")
-    print(f"Dataset univariable: {series_path}")
+    if measure_compatible:
+        print(f"Dataset univariable: {series_path}")
 
 
 if __name__ == "__main__":

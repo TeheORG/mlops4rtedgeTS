@@ -90,6 +90,84 @@ def main():
         parent_variant,
         "F03",
     )
+    parent_exports = parent_outputs.get("exports", {})
+
+    if (
+        parent_exports.get("measure_compatible") is False
+        or parent_exports.get("compatible") is False
+    ):
+        reason = (
+            parent_exports.get("incompatibility_reason")
+            or "Parent F02 measure is incompatible"
+        )
+        Tu = params["Tu"]
+        OW = params["OW"]
+        LT = params["LT"]
+        PW = params["PW"]
+        window_strategy = params["window_strategy"]
+        nan_mode = params["nan_mode"]
+        elapsed = time.perf_counter() - start_time
+
+        report_path = variant_dir / "03_windows_report.html"
+        report_path.write_text(
+            f"""
+            <html>
+            <body>
+            <h1>F03 Windows — {variant}</h1>
+            <p>Parent F02: {parent_variant}</p>
+            <p>compatible = False</p>
+            <p>reason = Parent F02 measure is incompatible: {reason}</p>
+            <p>OW={OW}, LT={LT}, PW={PW}, Tu={Tu}</p>
+            </body>
+            </html>
+            """,
+            encoding="utf-8",
+        )
+
+        outputs_content = {
+            "phase": PHASE,
+            "variant": variant,
+            "artifacts": {
+                "report": {
+                    "path": report_path.name,
+                    "sha256": sha256_of_file(report_path),
+                },
+            },
+            "exports": {
+                "Tu": Tu,
+                "OW": OW,
+                "LT": LT,
+                "PW": PW,
+                "Ratio_PW_OW": PW / OW if OW > 0 else None,
+                "window_strategy": window_strategy,
+                "nan_mode": nan_mode,
+                "parent_f02": parent_variant,
+                "n_windows": 0,
+                "compatible": False,
+                "measure_compatible": False,
+                "incompatibility_reason": (
+                    f"Parent F02 measure is incompatible: {reason}"
+                ),
+            },
+            "metrics": {
+                "execution_time": float(elapsed),
+                "n_rows_in": 0,
+                "n_windows_out": 0,
+                "compatible": False,
+                "incompatibility_reason": (
+                    f"Parent F02 measure is incompatible: {reason}"
+                ),
+            },
+            "provenance": {
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+            },
+        }
+
+        save_outputs_yaml(variant_dir, outputs_content)
+        validate_outputs(PHASE, outputs_content)
+        print(f"[WARN] F03 no genera ventanas: {reason}")
+        print(f"\n===== FASE {PHASE} COMPLETADA SIN DATASET =====")
+        return
 
     parent_series_path = resolve_artifact_path(
         parent_dir,

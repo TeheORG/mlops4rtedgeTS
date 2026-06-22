@@ -229,6 +229,16 @@ def main():
         parent_variant,
         "F04",
     )
+    parent_exports = parent_outputs.get("exports", {})
+    if (
+        parent_exports.get("measure_compatible") is False
+        or parent_exports.get("compatible") is False
+    ):
+        reason = (
+            parent_exports.get("incompatibility_reason")
+            or "Parent F03/F02 measure is incompatible"
+        )
+        raise RuntimeError(f"Parent F03 is incompatible; F04 cannot label targets: {reason}")
 
     parent_dataset_path = resolve_artifact_path(
         parent_dir,
@@ -250,7 +260,6 @@ def main():
     # Resolver F02 para min/max de la medida
     # --------------------------------------------------------
 
-    parent_exports = parent_outputs.get("exports", {})
     parent_f02 = parent_exports.get("parent_f02")
     measure_name = None
     value_col = None

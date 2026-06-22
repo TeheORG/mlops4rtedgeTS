@@ -173,7 +173,7 @@ phases:
 
         series:
           type: file
-          required: true
+          required: false
           extension: parquet
 
         stats:
@@ -226,6 +226,19 @@ phases:
           type: float
           required: true
 
+        compatible:
+          type: boolean
+          required: false
+
+        measure_compatible:
+          type: boolean
+          required: false
+
+        incompatibility_reason:
+          type: string
+          required: false
+          nullable: true
+
       metrics:
 
         execution_time:
@@ -247,6 +260,19 @@ phases:
         nan_ratio_out:
           type: float
           required: false
+
+        compatible:
+          type: boolean
+          required: false
+
+        measure_compatible:
+          type: boolean
+          required: false
+
+        incompatibility_reason:
+          type: string
+          required: false
+          nullable: true
 
   f03_windows:
 
@@ -306,7 +332,7 @@ phases:
 
         dataset:
           type: file
-          required: true
+          required: false
           extension: parquet
 
         report:
@@ -344,6 +370,19 @@ phases:
           type: integer
           required: true
 
+        compatible:
+          type: boolean
+          required: false
+
+        measure_compatible:
+          type: boolean
+          required: false
+
+        incompatibility_reason:
+          type: string
+          required: false
+          nullable: true
+
       metrics:
 
         execution_time:
@@ -353,6 +392,15 @@ phases:
         n_rows_in:
           type: integer
           required: true
+
+        compatible:
+          type: boolean
+          required: false
+
+        incompatibility_reason:
+          type: string
+          required: false
+          nullable: true
 
   # ------------------------------------------------------------
   # F04 — TARGET ENGINEERING (WINDOW LABELING)
