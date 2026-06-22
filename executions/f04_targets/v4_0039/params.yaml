@@ -1,0 +1,13 @@
+phase: f04_targets
+variant: v4_0039
+parent: v3_0010
+parameters:
+  parent_variant: v3_0010
+  Tu: 10
+  OW: 90
+  LT: 10
+  PW: 10
+  prediction_name: ge_active_power_low_10
+  event_strategy: threshold
+  threshold: 10.0
+  direction: low
