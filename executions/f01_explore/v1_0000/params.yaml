@@ -1,0 +1,28 @@
+phase: f01_explore
+variant: v1_0000
+parent: null
+parameters:
+  raw_path: data/raw.csv
+  cleaning: basic
+  nan_values:
+  - -999999
+  error_values:
+    MG-LV-MSB_AC_Voltage:
+    - 0
+    Receiving_Point_AC_Voltage:
+    - 0
+    Island_mode_MCCB_AC_Voltage:
+    - 0
+    Island_mode_MCCB_Frequency:
+    - -327.679993
+    - 0
+    MG-LV-MSB_Frequency:
+    - -327.679993
+    - 0
+    Outlet_Temperature:
+    - -52.5
+    Inlet_Temperature_of_Chilled_Water:
+    - -52.5
+    - -52.400002
+    - -52.299999
+parent_hashes: {}
