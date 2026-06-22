@@ -1,0 +1,45 @@
+phase: f02_events
+variant: v2_0009
+artifacts:
+  stats:
+    path: 02_series_stats.json
+    sha256: 92372caca3915a027f0e9c760a990439f8de60cd5daa3f19540473ab13e17dc3
+  report:
+    path: 02_series_report.html
+    sha256: 4052e3c3c8d29b250c16c0d353abc666a2318dca11e9dadb64ca6cf808b2cb3a
+  series:
+    path: 02_series.parquet
+    sha256: 7b40d334f7d979afbd8adcecc08c1795f6895277b928451e44fe3847d39d24b6
+exports:
+  Tu: 10
+  measure_name: Island_mode_MCCB_Active_Power
+  epoch_col: segs
+  value_col: value
+  n_rows: 3887242
+  n_non_nan: 3884671
+  nan_ratio: 0.0006613943767843628
+  compatible: true
+  measure_compatible: true
+  incompatibility_reason: null
+metrics:
+  execution_time: 1.664498014000003
+  n_rows: 3887242
+  n_non_nan: 3884671
+  n_nan: 2571
+  nan_ratio: 0.0006613943767843628
+  non_nan_ratio: 0.9993386056232156
+  min: -316.0
+  max: 197.0
+  mean: -55.58477230118072
+  median: -26.0
+  std: 61.623461243966425
+  q05: -158.0
+  q95: 21.0
+  zero_ratio: 0.004571558312145353
+  consecutive_ratio: 0.9999971702294764
+  broken_ratio: 2.829770523618165e-06
+  compatible: true
+  measure_compatible: true
+  incompatibility_reason: null
+provenance:
+  generated_at: '2026-06-22T15:55:18.411522+00:00'
