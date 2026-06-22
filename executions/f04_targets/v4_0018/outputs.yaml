@@ -1,0 +1,69 @@
+phase: f04_targets
+variant: v4_0018
+artifacts:
+  report:
+    path: 04_targets_report.html
+    sha256: 90a450ae730ea5fa95dd49c64e6e5ad512d5ba46ab520eba09c0d6e6cb04e165
+  dataset:
+    path: 04_targets.parquet
+    sha256: 2c177367fc8e077f822ab47260a381404cbcde00c575e76933188448b95abb0e
+exports:
+  Tu: 10
+  OW: 50
+  LT: 10
+  PW: 10
+  prediction_name: inlet_temperature_of_chilled_water_high_80
+  event_strategy: threshold
+  label_rule: any(PW_values high threshold)
+  input_window_column: OW_values
+  measure_name: Inlet_Temperature_of_Chilled_Water
+  value_col: value
+  direction: high
+  threshold_percentage: 80.0
+  threshold_value: 29.740000800000004
+  min_value: 5.9
+  max_value: 35.700001
+  window_strategy: synchro
+  parent_f03: v3_0005
+  parent_f02: v2_0005
+  n_windows: 3881762
+  n_windows_pos: 320263
+  n_windows_neg: 3561499
+  n_positive: 320263
+  n_negative: 3561499
+  positive_ratio: 0.08250454303999061
+  negative_ratio: 0.9174954569600094
+  class_balance_ratio: 0.08250454303999061
+  target_compatible: true
+  incompatibility_reason: null
+  target_candidate_checks:
+  - measure: Inlet_Temperature_of_Chilled_Water
+    direction: high
+  deduplication_stats:
+    total_sequences: 3881762
+    unique_ow_sequences: 3021403
+    num_duplicate_sequences: 860359
+    duplicate_ratio: 0.2216413577133271
+    ambiguous_sequences: null
+    ambiguous_samples: null
+    ambiguous_ratio: null
+    avg_label_consistency_per_ow: null
+    source: parent_f03
+  unique_ratio: 0.778358642286673
+  dup_ratio_ow_parent: 0.22164135771332705
+  dup_ratio_pw_parent: 0.9288926008343634
+  seq_len_mean_ow_parent: 49.990223511900005
+metrics:
+  execution_time: 6.546499976000007
+  positive_ratio: 0.08250454303999061
+  negative_ratio: 0.9174954569600094
+  n_windows: 3881762
+  n_windows_pos: 320263
+  n_windows_neg: 3561499
+  n_positive: 320263
+  n_negative: 3561499
+  target_compatible: true
+  incompatibility_reason: null
+  threshold_value: 29.740000800000004
+provenance:
+  generated_at: '2026-06-22T22:49:44.466565+00:00'
