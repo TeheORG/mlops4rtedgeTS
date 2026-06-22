@@ -1,0 +1,45 @@
+phase: f02_events
+variant: v2_0006
+artifacts:
+  stats:
+    path: 02_series_stats.json
+    sha256: 2d66eac3d2781c9116649ad8095ff135c8bfe10701d6ff1703af49222591faac
+  report:
+    path: 02_series_report.html
+    sha256: 006931647623385f0d3dc2fd566ce8f80f315576dc9dc65cee12dc911bc9ba5d
+  series:
+    path: 02_series.parquet
+    sha256: dca7af4a305de2a55ff1e305721958962438321777ff811870e446f082f282d0
+exports:
+  Tu: 10
+  measure_name: Battery_Active_Power
+  epoch_col: segs
+  value_col: value
+  n_rows: 3887242
+  n_non_nan: 3884671
+  nan_ratio: 0.0006613943767843628
+  compatible: true
+  measure_compatible: true
+  incompatibility_reason: null
+metrics:
+  execution_time: 2.070248724999999
+  n_rows: 3887242
+  n_non_nan: 3884671
+  n_nan: 2571
+  nan_ratio: 0.0006613943767843628
+  non_nan_ratio: 0.9993386056232156
+  min: -216.800003
+  max: 119.900002
+  mean: -0.8926800492947793
+  median: -0.1
+  std: 11.834278740593486
+  q05: -0.6
+  q95: 0.1
+  zero_ratio: 0.38490363791425325
+  consecutive_ratio: 0.9999971702294764
+  broken_ratio: 2.829770523618165e-06
+  compatible: true
+  measure_compatible: true
+  incompatibility_reason: null
+provenance:
+  generated_at: '2026-06-22T15:53:57.150596+00:00'
