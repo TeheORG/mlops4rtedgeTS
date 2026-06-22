@@ -199,3 +199,7 @@ mlflow_registration:
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0043/05_modeling_model.h5
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0043/05_modeling_history.json
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0043/05_modeling_trials_summary.json
+mlflow:
+  run_id: e570313b86b14e9d9f87b5cc21e777d4
+  experiment_id: '11'
+  experiment_name: F05_outlet_temperature_low_10
