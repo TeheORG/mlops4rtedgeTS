@@ -1,0 +1,13 @@
+phase: f04_targets
+variant: v4_0044
+parent: v3_0011
+parameters:
+  parent_variant: v3_0011
+  Tu: 10
+  OW: 90
+  LT: 10
+  PW: 10
+  prediction_name: outlet_temperature_low_20
+  event_strategy: threshold
+  threshold: 20.0
+  direction: low
