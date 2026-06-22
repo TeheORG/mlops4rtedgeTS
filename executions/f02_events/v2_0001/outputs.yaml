@@ -1,0 +1,45 @@
+phase: f02_events
+variant: v2_0001
+artifacts:
+  stats:
+    path: 02_series_stats.json
+    sha256: cf50ce3f11103171971d8321aa3fe67449a9eed5e89699eff999626b1df1532f
+  report:
+    path: 02_series_report.html
+    sha256: f07d0085ada37911e2dcef179d42a391a30e9fd7ed3afd29770e684f7fcf7b60
+  series:
+    path: 02_series.parquet
+    sha256: effcc3bbb839210588683558c9ddfcae90494149ecf58778e68b10848239c744
+exports:
+  Tu: 10
+  measure_name: GE_Active_Power
+  epoch_col: segs
+  value_col: value
+  n_rows: 3887242
+  n_non_nan: 3884671
+  nan_ratio: 0.0006613943767843628
+  compatible: true
+  measure_compatible: true
+  incompatibility_reason: null
+metrics:
+  execution_time: 2.027963232000019
+  n_rows: 3887242
+  n_non_nan: 3884671
+  n_nan: 2571
+  nan_ratio: 0.0006613943767843628
+  non_nan_ratio: 0.9993386056232156
+  min: -601.0
+  max: 400.0
+  mean: 38.61636040200522
+  median: -0.7
+  std: 73.97503776500565
+  q05: -1.5
+  q95: 137.0
+  zero_ratio: 0.002972709915460022
+  consecutive_ratio: 0.9999971702294764
+  broken_ratio: 2.829770523618165e-06
+  compatible: true
+  measure_compatible: true
+  incompatibility_reason: null
+provenance:
+  generated_at: '2026-06-22T15:55:07.316489+00:00'
