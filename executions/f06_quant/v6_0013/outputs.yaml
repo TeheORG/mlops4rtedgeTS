@@ -1,0 +1,94 @@
+phase: f06_quant
+variant: v6_0013
+artifacts:
+  calibration_dataset:
+    path: 06_calibration_dataset.parquet
+    sha256: 50daf42ef5f1a3a64b4ee0f8637fd42032954da78b50c710436dc03c45c9ef2d
+  report:
+    path: 06_quant_report.html
+    sha256: f6cc64ba6674d3d07e6e6cfceaed0f21e60dba62b2478f99d75d2e7af17c3077
+  test_dataset:
+    path: 06_test_dataset.parquet
+    sha256: 8faac014c9f27a68b17f55e347cc6b9421e991e6210be9ac2c968037ef9ef069
+  model_float:
+    path: 06_model_float.h5
+    sha256: e78389caa22b0f03854afbc3f5a79a649705ab96f7418bf49a5686693d61793d
+  model_tflite:
+    path: 06_model_tflite.tflite
+    sha256: da6bc2903e35d9da0d9cc5883ff1221f90284b85687ec9898530e3acc8e8ce3b
+  eedu_manifest:
+    path: eedu/eedu_manifest.yaml
+    sha256: c29bf63de0332e6cf7204ecf2211bcc4ba693751ca30e14d5466cd20aa5ac0b2
+exports:
+  Tu: 10
+  OW: 50
+  LT: 10
+  PW: 10
+  prediction_name: mg_lv_msb_ac_voltage_high_90
+  runtime_model_name: mg_lv_msb_ac_voltage_high_90-cnn1d-v5_0013
+  model_family: cnn1d
+  edge_capable: true
+  input_sequence_column: OW_values
+  input_representation: continuous_timeseries
+  input_dtype_train: float32
+  input_dtype_tflite: int8
+  uses_embedding: false
+  uses_event_ids: false
+  input_max_len: 50
+  normalization_mean: 488.7939147949219
+  normalization_std: 7.196025371551514
+  normalization_source: f05_train_only
+  decision_threshold: 0.7492870688438416
+  tflite_eval_threshold: 0.9797474145889282
+  tflite_test_precision: 0.8789156626506024
+  tflite_test_recall: 0.9609220636663007
+  tflite_test_f1: 0.9180912427897221
+  tflite_test_pr_auc: 0.9274997390316783
+  tflite_test_fp: 603
+  tflite_test_fn: 178
+  model_size_bytes: 25288
+  arena_estimated_bytes: 37932
+  footprint_estimated_bytes: 63220
+  operators:
+  - CONV_2D
+  - EXPAND_DIMS
+  - FULLY_CONNECTED
+  - LOGISTIC
+  - REDUCE_MAX
+  - RESHAPE
+  input_dtype: int8
+  output_dtype: int8
+  input_shape:
+  - 1
+  - 50
+  - 1
+  output_shape:
+  - 1
+  - 1
+  input_bytes: 50
+  output_bytes: 1
+metrics:
+  execution_time: 29.133327070000007
+  input_sequence_column: OW_values
+  input_representation: continuous_timeseries
+  input_dtype_train: float32
+  input_dtype_tflite: int8
+  uses_embedding: false
+  uses_event_ids: false
+  normalization_mean: 488.7939147949219
+  normalization_std: 7.196025371551514
+  tflm_compatible: true
+  operators_detected: 6
+  unsupported_operators: 0
+  n_calibration_samples: 678918
+  single_input_output_int8: true
+  single_input_output_integer: true
+  tflite_eval_threshold: 0.9797474145889282
+  tflite_test_precision: 0.8789156626506024
+  tflite_test_recall: 0.9609220636663007
+  tflite_test_f1: 0.9180912427897221
+  tflite_test_pr_auc: 0.9274997390316783
+  tflite_test_tp: 4377
+  tflite_test_tn: 14842
+  tflite_test_fp: 603
+  tflite_test_fn: 178
