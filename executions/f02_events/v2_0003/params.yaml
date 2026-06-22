@@ -1,0 +1,7 @@
+phase: f02_events
+variant: v2_0003
+parent: v1_0000
+parameters:
+  parent_variant: v1_0000
+  Tu: 10
+  measure_name: PVPCS_Active_Power
