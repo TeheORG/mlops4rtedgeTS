@@ -1,0 +1,8 @@
+created_at: '2026-06-22T22:32:37.668973+00:00'
+params_path: executions/f03_windows/v3_0018/params.yaml
+lifecycle_state: VARIANT_CREATED
+lifecycle_updated_at: '2026-06-22T22:32:38.074616+00:00'
+verified: none
+verified_updated_at: '2026-06-22T22:32:37.942378+00:00'
+registred: none
+runner: GithubActions
