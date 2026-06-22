@@ -1,0 +1,7 @@
+phase: f02_events
+variant: v2_0005
+parent: v1_0000
+parameters:
+  parent_variant: v1_0000
+  Tu: 10
+  measure_name: Inlet_Temperature_of_Chilled_Water
