@@ -2,7 +2,7 @@ created_at: '2026-06-22T22:49:57.111923+00:00'
 params_path: executions/f04_targets/v4_0067/params.yaml
 lifecycle_state: EXECUTION_COMPLETED
 lifecycle_updated_at: '2026-06-22T22:50:16.803702+00:00'
-verified: none
-verified_updated_at: '2026-06-22T22:50:05.724665+00:00'
+verified: true
+verified_updated_at: '2026-06-22T22:50:27.469274+00:00'
 registred: none
 runner: GithubActions
