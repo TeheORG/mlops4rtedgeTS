@@ -1,0 +1,45 @@
+phase: f02_events
+variant: v2_0007
+artifacts:
+  stats:
+    path: 02_series_stats.json
+    sha256: 7a372a3c1ed0d71028320f4fa3dcd257a991a043ade07086f6daaacfdac436f4
+  report:
+    path: 02_series_report.html
+    sha256: 689a2fa203357dc7ce0f15dec6a8e8c84fec98f66a3eb3564b7489fea884e3a8
+  series:
+    path: 02_series.parquet
+    sha256: 42f63b19fcbd685ff6e19e22d8240ef59cef2c39cf7af04d41994d40271a0389
+exports:
+  Tu: 10
+  measure_name: FC_Active_Power
+  epoch_col: segs
+  value_col: value
+  n_rows: 3887242
+  n_non_nan: 3884671
+  nan_ratio: 0.0006613943767843628
+  compatible: true
+  measure_compatible: true
+  incompatibility_reason: null
+metrics:
+  execution_time: 1.6681175459999906
+  n_rows: 3887242
+  n_non_nan: 3884671
+  n_nan: 2571
+  nan_ratio: 0.0006613943767843628
+  non_nan_ratio: 0.9993386056232156
+  min: -34.0
+  max: 76.0
+  mean: 29.817260715257483
+  median: 37.0
+  std: 15.704972195912369
+  q05: -1.0
+  q95: 38.0
+  zero_ratio: 0.10512988101180254
+  consecutive_ratio: 0.9999971702294764
+  broken_ratio: 2.829770523618165e-06
+  compatible: true
+  measure_compatible: true
+  incompatibility_reason: null
+provenance:
+  generated_at: '2026-06-22T15:54:38.360996+00:00'
