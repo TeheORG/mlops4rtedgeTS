@@ -1,0 +1,94 @@
+phase: f06_quant
+variant: v6_0018
+artifacts:
+  calibration_dataset:
+    path: 06_calibration_dataset.parquet
+    sha256: 2c819b484991bfc177382efb9014280da8548544647b4e8e8f8c3194112dd6ad
+  report:
+    path: 06_quant_report.html
+    sha256: 5abd440a907966383e30468e61a7e81e6cdbb1ff0f01648baa9f398bc698b71c
+  test_dataset:
+    path: 06_test_dataset.parquet
+    sha256: 4775999c236de30f8ade5967f3a15812f663b2edee51c88459d79be8314fb74b
+  model_float:
+    path: 06_model_float.h5
+    sha256: 0ec460b1c1a78c44a125c00a710385df4a1dd34ebc71f773f6adb7dc3e6ed22b
+  model_tflite:
+    path: 06_model_tflite.tflite
+    sha256: 163802c9b76429b0b37db7b66e82bd7cc50b86fff21659ff0bb2f1532c4ac137
+  eedu_manifest:
+    path: eedu/eedu_manifest.yaml
+    sha256: b38c4ceb989c06ebad7e5bbbc23815383460bedf5039826f9f111841225b0b4e
+exports:
+  Tu: 10
+  OW: 50
+  LT: 10
+  PW: 10
+  prediction_name: inlet_temperature_of_chilled_water_high_80
+  runtime_model_name: inlet_temperature_of_chilled_water_high_80-cnn1d-v5_0018
+  model_family: cnn1d
+  edge_capable: true
+  input_sequence_column: OW_values
+  input_representation: continuous_timeseries
+  input_dtype_train: float32
+  input_dtype_tflite: int8
+  uses_embedding: false
+  uses_event_ids: false
+  input_max_len: 50
+  normalization_mean: 30.09354019165039
+  normalization_std: 4.3453145027160645
+  normalization_source: f05_train_only
+  decision_threshold: 0.7861905694007874
+  tflite_eval_threshold: 0.9670346975326538
+  tflite_test_precision: 0.995739500912964
+  tflite_test_recall: 0.9915151515151515
+  tflite_test_f1: 0.9936228363194656
+  tflite_test_pr_auc: 0.9982383670496849
+  tflite_test_fp: 7
+  tflite_test_fn: 14
+  model_size_bytes: 15488
+  arena_estimated_bytes: 23232
+  footprint_estimated_bytes: 38720
+  operators:
+  - CONV_2D
+  - EXPAND_DIMS
+  - FULLY_CONNECTED
+  - LOGISTIC
+  - REDUCE_MAX
+  - RESHAPE
+  input_dtype: int8
+  output_dtype: int8
+  input_shape:
+  - 1
+  - 50
+  - 1
+  output_shape:
+  - 1
+  - 1
+  input_bytes: 50
+  output_bytes: 1
+metrics:
+  execution_time: 11.098434646000001
+  input_sequence_column: OW_values
+  input_representation: continuous_timeseries
+  input_dtype_train: float32
+  input_dtype_tflite: int8
+  uses_embedding: false
+  uses_event_ids: false
+  normalization_mean: 30.09354019165039
+  normalization_std: 4.3453145027160645
+  tflm_compatible: true
+  operators_detected: 6
+  unsupported_operators: 0
+  n_calibration_samples: 284184
+  single_input_output_int8: true
+  single_input_output_integer: true
+  tflite_eval_threshold: 0.9670346975326538
+  tflite_test_precision: 0.995739500912964
+  tflite_test_recall: 0.9915151515151515
+  tflite_test_f1: 0.9936228363194656
+  tflite_test_pr_auc: 0.9982383670496849
+  tflite_test_tp: 1636
+  tflite_test_tn: 18343
+  tflite_test_fp: 7
+  tflite_test_fn: 14
