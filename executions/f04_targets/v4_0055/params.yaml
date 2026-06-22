@@ -1,0 +1,13 @@
+phase: f04_targets
+variant: v4_0055
+parent: v3_0014
+parameters:
+  parent_variant: v3_0014
+  Tu: 10
+  OW: 90
+  LT: 10
+  PW: 10
+  prediction_name: inlet_temperature_of_chilled_water_low_10
+  event_strategy: threshold
+  threshold: 10.0
+  direction: low
