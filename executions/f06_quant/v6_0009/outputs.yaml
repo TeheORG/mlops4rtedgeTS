@@ -1,0 +1,94 @@
+phase: f06_quant
+variant: v6_0009
+artifacts:
+  calibration_dataset:
+    path: 06_calibration_dataset.parquet
+    sha256: aed7951e4c5724772d0b9b1ff9d4587eada25cc80fc04ab45b66cbd709fe436c
+  report:
+    path: 06_quant_report.html
+    sha256: 9db5de3f07f02066582cd829cffc2d01e02f7754545bd0ea20499ca05681af31
+  test_dataset:
+    path: 06_test_dataset.parquet
+    sha256: 815982c29b385dee9b4374b9f1360099d1269c9e503bfb92223ba8604a497437
+  model_float:
+    path: 06_model_float.h5
+    sha256: 4cb194ba2f709353ee1af44f1809d9360d9fdc666036346140500619be10fd46
+  model_tflite:
+    path: 06_model_tflite.tflite
+    sha256: 6d4bc76e31fd67b58b77ea729df75c290567c2e21dbfa15f72ebf3a3d65de960
+  eedu_manifest:
+    path: eedu/eedu_manifest.yaml
+    sha256: 4bac2b82b461ce95daf03b44134a30bfe941cd99f795b65a8c6a817418977728
+exports:
+  Tu: 10
+  OW: 50
+  LT: 10
+  PW: 10
+  prediction_name: pvpcs_active_power_high_90
+  runtime_model_name: pvpcs_active_power_high_90-cnn1d-v5_0009
+  model_family: cnn1d
+  edge_capable: true
+  input_sequence_column: OW_values
+  input_representation: continuous_timeseries
+  input_dtype_train: float32
+  input_dtype_tflite: int8
+  uses_embedding: false
+  uses_event_ids: false
+  input_max_len: 50
+  normalization_mean: 21.54863929748535
+  normalization_std: 19.08696174621582
+  normalization_source: f05_train_only
+  decision_threshold: 0.7004774808883667
+  tflite_eval_threshold: 0.9389877319335938
+  tflite_test_precision: 0.3297587131367292
+  tflite_test_recall: 0.825503355704698
+  tflite_test_f1: 0.47126436781609193
+  tflite_test_pr_auc: 0.4382780374255132
+  tflite_test_fp: 250
+  tflite_test_fn: 26
+  model_size_bytes: 15488
+  arena_estimated_bytes: 23232
+  footprint_estimated_bytes: 38720
+  operators:
+  - CONV_2D
+  - EXPAND_DIMS
+  - FULLY_CONNECTED
+  - LOGISTIC
+  - REDUCE_MAX
+  - RESHAPE
+  input_dtype: int8
+  output_dtype: int8
+  input_shape:
+  - 1
+  - 50
+  - 1
+  output_shape:
+  - 1
+  - 1
+  input_bytes: 50
+  output_bytes: 1
+metrics:
+  execution_time: 4.684387895
+  input_sequence_column: OW_values
+  input_representation: continuous_timeseries
+  input_dtype_train: float32
+  input_dtype_tflite: int8
+  uses_embedding: false
+  uses_event_ids: false
+  normalization_mean: 21.54863929748535
+  normalization_std: 19.08696174621582
+  tflm_compatible: true
+  operators_detected: 6
+  unsupported_operators: 0
+  n_calibration_samples: 80258
+  single_input_output_int8: true
+  single_input_output_integer: true
+  tflite_eval_threshold: 0.9389877319335938
+  tflite_test_precision: 0.3297587131367292
+  tflite_test_recall: 0.825503355704698
+  tflite_test_f1: 0.47126436781609193
+  tflite_test_pr_auc: 0.4382780374255132
+  tflite_test_tp: 123
+  tflite_test_tn: 19601
+  tflite_test_fp: 250
+  tflite_test_fn: 26
