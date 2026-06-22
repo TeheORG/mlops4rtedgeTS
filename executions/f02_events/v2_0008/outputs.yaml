@@ -1,0 +1,45 @@
+phase: f02_events
+variant: v2_0008
+artifacts:
+  stats:
+    path: 02_series_stats.json
+    sha256: 42606200ed353a94b1aa23439db8cf3978ce717ffc579b057a6057076f8ba61a
+  report:
+    path: 02_series_report.html
+    sha256: 6c62a0ed1eb49a764601bf8ddb813ed940c948d39ce6f676de2a6cb85f1baab8
+  series:
+    path: 02_series.parquet
+    sha256: 9623477f4cca6bd9000d2fe151b053d45bfb45c1422f25ee6f583d6842f49e65
+exports:
+  Tu: 10
+  measure_name: Island_mode_MCCB_AC_Voltage
+  epoch_col: segs
+  value_col: value
+  n_rows: 3887242
+  n_non_nan: 3884657
+  nan_ratio: 0.0006649959019788323
+  compatible: true
+  measure_compatible: true
+  incompatibility_reason: null
+metrics:
+  execution_time: 1.6959246039999982
+  n_rows: 3887242
+  n_non_nan: 3884657
+  n_nan: 2585
+  nan_ratio: 0.0006649959019788323
+  non_nan_ratio: 0.9993350040980211
+  min: 458.0
+  max: 497.0
+  mean: 484.23859094895636
+  median: 484.0
+  std: 3.7885654884398536
+  q05: 478.0
+  q95: 490.0
+  zero_ratio: 0.0
+  consecutive_ratio: 0.9999971702294764
+  broken_ratio: 2.829770523618165e-06
+  compatible: true
+  measure_compatible: true
+  incompatibility_reason: null
+provenance:
+  generated_at: '2026-06-22T15:54:42.650292+00:00'
