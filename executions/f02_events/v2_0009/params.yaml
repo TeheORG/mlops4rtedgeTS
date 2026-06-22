@@ -1,0 +1,7 @@
+phase: f02_events
+variant: v2_0009
+parent: v1_0000
+parameters:
+  parent_variant: v1_0000
+  Tu: 10
+  measure_name: Island_mode_MCCB_Active_Power
