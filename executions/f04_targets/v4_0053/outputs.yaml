@@ -1,0 +1,69 @@
+phase: f04_targets
+variant: v4_0053
+artifacts:
+  report:
+    path: 04_targets_report.html
+    sha256: 2d9b77f384b2ffff4e5338f79e627e81e97da931821f44249ab466906962e898
+  dataset:
+    path: 04_targets.parquet
+    sha256: f8c1fb950f6809b2d14fa80cd01174a37a2cd091cd3a532d5d2a3322ce664b9f
+exports:
+  Tu: 10
+  OW: 90
+  LT: 10
+  PW: 10
+  prediction_name: inlet_temperature_of_chilled_water_high_90
+  event_strategy: threshold
+  label_rule: any(PW_values high threshold)
+  input_window_column: OW_values
+  measure_name: Inlet_Temperature_of_Chilled_Water
+  value_col: value
+  direction: high
+  threshold_percentage: 90.0
+  threshold_value: 32.7200009
+  min_value: 5.9
+  max_value: 35.700001
+  window_strategy: synchro
+  parent_f03: v3_0014
+  parent_f02: v2_0005
+  n_windows: 3880122
+  n_windows_pos: 33531
+  n_windows_neg: 3846591
+  n_positive: 33531
+  n_negative: 3846591
+  positive_ratio: 0.008641738584508426
+  negative_ratio: 0.9913582614154915
+  class_balance_ratio: 0.008641738584508426
+  target_compatible: true
+  incompatibility_reason: null
+  target_candidate_checks:
+  - measure: Inlet_Temperature_of_Chilled_Water
+    direction: high
+  deduplication_stats:
+    total_sequences: 3880122
+    unique_ow_sequences: 3542888
+    num_duplicate_sequences: 337234
+    duplicate_ratio: 0.0869132465422479
+    ambiguous_sequences: null
+    ambiguous_samples: null
+    ambiguous_ratio: null
+    avg_label_consistency_per_ow: null
+    source: parent_f03
+  unique_ratio: 0.9130867534577521
+  dup_ratio_ow_parent: 0.08691324654224786
+  dup_ratio_pw_parent: 0.9288782672297418
+  seq_len_mean_ow_parent: 89.9721890187989
+metrics:
+  execution_time: 9.480329254999987
+  positive_ratio: 0.008641738584508426
+  negative_ratio: 0.9913582614154915
+  n_windows: 3880122
+  n_windows_pos: 33531
+  n_windows_neg: 3846591
+  n_positive: 33531
+  n_negative: 3846591
+  target_compatible: true
+  incompatibility_reason: null
+  threshold_value: 32.7200009
+provenance:
+  generated_at: '2026-06-22T22:39:23.894442+00:00'
