@@ -1,0 +1,45 @@
+phase: f02_events
+variant: v2_0004
+artifacts:
+  stats:
+    path: 02_series_stats.json
+    sha256: 826921f1a8986c2d89e626aa9c2d09ea226e5a421e2781eb8091b273a9c158ee
+  report:
+    path: 02_series_report.html
+    sha256: 6bb1b9d1bb505006aa25a7ea772a415409bf00ceaec08d6a0915ef9466053a5a
+  series:
+    path: 02_series.parquet
+    sha256: 31c02f0067da10d540da9ae884e9ddcb3b2e5d09e0a72ab7fbdbe6680c9d9a4b
+exports:
+  Tu: 10
+  measure_name: MG-LV-MSB_AC_Voltage
+  epoch_col: segs
+  value_col: value
+  n_rows: 3887242
+  n_non_nan: 3884658
+  nan_ratio: 0.0006647386501792273
+  compatible: true
+  measure_compatible: true
+  incompatibility_reason: null
+metrics:
+  execution_time: 1.8998407409999913
+  n_rows: 3887242
+  n_non_nan: 3884658
+  n_nan: 2584
+  nan_ratio: 0.0006647386501792273
+  non_nan_ratio: 0.9993352613498208
+  min: 399.0
+  max: 497.0
+  mean: 484.1666519935603
+  median: 484.0
+  std: 3.8307754196843655
+  q05: 478.0
+  q95: 490.0
+  zero_ratio: 0.0
+  consecutive_ratio: 0.9999971702294764
+  broken_ratio: 2.829770523618165e-06
+  compatible: true
+  measure_compatible: true
+  incompatibility_reason: null
+provenance:
+  generated_at: '2026-06-22T15:55:11.509662+00:00'
