@@ -1,0 +1,201 @@
+phase: f05_modeling
+variant: v5_0013
+artifacts:
+  model:
+    path: 05_modeling_model.h5
+    sha256: e78389caa22b0f03854afbc3f5a79a649705ab96f7418bf49a5686693d61793d
+  labeled_dataset:
+    path: 05_modeling_training_dataset.parquet
+    sha256: 50daf42ef5f1a3a64b4ee0f8637fd42032954da78b50c710436dc03c45c9ef2d
+  history:
+    path: 05_modeling_history.json
+    sha256: 661720d4a85bd85c5687b5243644bd44a7d8f2cf939743d2aa841e1955443b81
+  split_hash_leakage:
+    path: 05_modeling_split_hash_leakage.json
+    sha256: 4bb8a941cd855bba6bbaf8f407c8b7b82413b2bbb9eb5a30ab2631c00f48e313
+  report:
+    path: 05_modeling_report.html
+    sha256: 3528abd2b51a8966b4f89e8919623d383d332eb13c4a49385976b0635424136e
+exports:
+  Tu: 10
+  OW: 50
+  LT: 10
+  PW: 10
+  prediction_name: mg_lv_msb_ac_voltage_high_90
+  measure_name: MG-LV-MSB_AC_Voltage
+  model_family: cnn1d
+  input_sequence_column: OW_values
+  input_representation: continuous_timeseries
+  input_dtype_train: float32
+  input_dtype_tflite: int8
+  uses_embedding: false
+  uses_event_ids: false
+  normalization_mean: 488.7939147949219
+  normalization_std: 7.196025371551514
+  normalization_source: train_only
+  input_max_len: 50
+  window_strategy: synchro
+  deduplication_mode: none
+  deduplication_mode_effective: none
+  seed: 42
+  trainable: true
+  possible_split_leakage: false
+  high_split_leakage_warning: false
+  decision_threshold: 0.9797474145889282
+  threshold_source: validation
+  threshold_policy: optimal_f2
+  threshold_metric: f2
+  threshold_warning: null
+  best_val_recall: 0.9615806805708014
+  val_precision: 0.8877178759627078
+  val_recall: 0.9615806805708014
+  val_f1: 0.92317420170724
+  val_pr_auc: 0.9777412860896926
+  val_precision_at_threshold: 0.8877178759627078
+  val_recall_at_threshold: 0.9615806805708014
+  val_f1_at_threshold: 0.92317420170724
+  test_precision: 0.8906791760146849
+  test_recall: 0.9587266739846323
+  test_f1: 0.9234510467329246
+  test_precision_at_threshold: 0.8906791760146849
+  test_recall_at_threshold: 0.9587266739846323
+  test_f1_at_threshold: 0.9234510467329246
+  test_fn_at_threshold: 188
+  test_pr_auc: 0.9777571176425424
+  imbalance_strategy: rare_events
+  parent_f04: v4_0013
+  parent_f03: v3_0004
+  parent_f02: v2_0004
+metrics:
+  execution_time: 949.662620556
+  input_sequence_column: OW_values
+  input_representation: continuous_timeseries
+  input_dtype_train: float32
+  input_dtype_tflite: int8
+  uses_embedding: false
+  uses_event_ids: false
+  normalization_mean: 488.7939147949219
+  normalization_std: 7.196025371551514
+  normalization_source: train_only
+  mejor_modelo_f1:
+    f1: 0.930401366353544
+    recall: 0.9567508232711306
+    precision: 0.9054643673384584
+  mejor_modelo_precision:
+    f1: 0.930401366353544
+    recall: 0.9567508232711306
+    precision: 0.9054643673384584
+  mejor_modelo_recall:
+    f1: 0.92317420170724
+    recall: 0.9615806805708014
+    precision: 0.8877178759627078
+  threshold_selection:
+    threshold: 0.9797474145889282
+    policy: optimal_f2
+    source: validation
+    metric: f2
+    warning: null
+    f2: 0.9458408914226486
+    precision: 0.8877178759627078
+    recall: 0.9615806805708014
+    f1: 0.92317420170724
+  n_train: 638918
+  n_val: 20000
+  n_test: 20000
+  n_exact_train: 0
+  n_exact_val: 0
+  n_exact_test: 0
+  n_exact_intersection_train_val: 0
+  n_exact_intersection_train_test: 0
+  n_exact_intersection_val_test: 0
+  n_exact_intersection_all_three: 0
+  n_unordered_train: 0
+  n_unordered_val: 0
+  n_unordered_test: 0
+  n_unordered_intersection_train_val: 0
+  n_unordered_intersection_train_test: 0
+  n_unordered_intersection_val_test: 0
+  n_unordered_intersection_all_three: 0
+  n_near_pairs_train_val: 0
+  n_near_pairs_train_test: 0
+  n_near_pairs_val_test: 0
+  n_near_pairs_total: 0
+  max_split_overlap_pct: 0.0
+  positive_ratio_train: 0.9686970784983362
+  positive_ratio_val: 0.22775
+  positive_ratio_test: 0.22775
+  val_positive_ratio: 0.22775
+  test_positive_ratio: 0.22775
+  val_pr_auc: 0.9777412860896926
+  val_precision_at_threshold: 0.8877178759627078
+  val_recall_at_threshold: 0.9615806805708014
+  val_f1_at_threshold: 0.92317420170724
+  test_pr_auc: 0.9777571176425424
+  test_precision_at_threshold: 0.8906791760146849
+  test_recall_at_threshold: 0.9587266739846323
+  test_f1_at_threshold: 0.9234510467329246
+  test_fn_at_threshold: 188
+  val_cap_used: true
+  test_cap_used: true
+  val_max_samples: 20000
+  test_max_samples: 20000
+  val_positive_ratio_before: 0.22774354853111886
+  val_positive_ratio_after: 0.22775
+  test_positive_ratio_before: 0.22774354853111886
+  test_positive_ratio_after: 0.22775
+  tp: 4367
+  tn: 14909
+  fp: 536
+  fn: 188
+  n_samples_before_dedup: 2717620
+  n_samples_after_dedup: 2717620
+  n_removed_by_dedup: 0
+  removed_ratio_by_dedup: 0.0
+  train_n_samples_before_dedup: 2717620
+  train_n_samples_after_dedup: 2717620
+  train_n_removed_by_dedup: 0
+  train_removed_ratio_by_dedup: 0.0
+provenance:
+  generated_at: '2026-06-22T23:50:36.403162+00:00'
+  parent_phase: f04_targets
+  parent_variant: v4_0013
+mlflow_registration:
+  experiment_name: F05_mg_lv_msb_ac_voltage_high_90
+  run_name: mg_lv_msb_ac_voltage_high_90__v5_0013
+  metrics:
+    val_precision: 0.8877178759627078
+    val_recall: 0.9615806805708014
+    val_f1: 0.92317420170724
+    val_pr_auc: 0.9777412860896926
+    val_precision_at_threshold: 0.8877178759627078
+    val_recall_at_threshold: 0.9615806805708014
+    val_f1_at_threshold: 0.92317420170724
+    test_precision: 0.8906791760146849
+    test_recall: 0.9587266739846323
+    test_f1: 0.9234510467329246
+    test_precision_at_threshold: 0.8906791760146849
+    test_recall_at_threshold: 0.9587266739846323
+    test_f1_at_threshold: 0.9234510467329246
+    test_fn_at_threshold: 188
+    test_pr_auc: 0.9777571176425424
+    test_tp: 4367
+    test_tn: 14909
+    test_fp: 536
+    test_fn: 188
+  params:
+    batch_size: 256
+    learning_rate: 0.001
+    n_layers: 1
+    units: 128
+    dropout: 0.2
+    filters: 128
+    kernel_size: 5
+    model_family: cnn1d
+    decision_threshold: 0.9797474145889282
+    threshold_source: validation
+    threshold_policy: optimal_f2
+    threshold_metric: f2
+  artifacts:
+  - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0013/05_modeling_model.h5
+  - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0013/05_modeling_history.json
+  - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0013/05_modeling_trials_summary.json
