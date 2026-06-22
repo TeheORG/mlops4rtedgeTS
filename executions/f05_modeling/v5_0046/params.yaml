@@ -1,0 +1,50 @@
+phase: f05_modeling
+variant: v5_0046
+parent: v4_0046
+parameters:
+  parent_variant: v4_0046
+  Tu: 10
+  OW: 90
+  LT: 10
+  PW: 10
+  prediction_name: pvpcs_active_power_high_80
+  model_family: cnn1d
+  automl:
+    enabled: true
+    max_trials: 3
+    seed: 42
+  search_space:
+    common:
+      batch_size:
+      - 128
+      - 256
+      learning_rate:
+      - 0.001
+      - 0.0005
+      n_layers:
+      - 1
+      - 2
+      units:
+      - 64
+      - 128
+      dropout:
+      - 0.0
+      - 0.2
+    dense_bow: {}
+    cnn1d:
+      filters:
+      - 64
+      - 128
+      kernel_size:
+      - 3
+      - 5
+  training:
+    epochs: 5
+    max_samples: null
+  deduplication_mode: none
+  seed: 42
+  evaluation:
+    val_max_samples: 20000
+    test_max_samples: 20000
+  imbalance_strategy: rare_events
+  imbalance_max_majority_samples: 20000
