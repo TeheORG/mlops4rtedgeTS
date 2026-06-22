@@ -2,7 +2,7 @@ created_at: '2026-06-22T23:08:51.976347+00:00'
 params_path: executions/f05_modeling/v5_0027/params.yaml
 lifecycle_state: EXECUTION_COMPLETED
 lifecycle_updated_at: '2026-06-22T23:11:21.026173+00:00'
-verified: none
-verified_updated_at: '2026-06-22T23:08:59.889886+00:00'
+verified: true
+verified_updated_at: '2026-06-22T23:11:28.081237+00:00'
 registred: none
 runner: GithubActions
