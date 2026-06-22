@@ -1753,6 +1753,7 @@ def write_non_trainable_outputs(
         <li>n_samples_total = {total_samples}</li>
         <li>negative_samples = {negative_samples}</li>
         <li>positive_samples = {positive_samples}</li>
+        <li>labeled_dataset = {training_dataset_path.name if training_dataset_path is not None else "N/A"}</li>
       </ul>
       <h2>Geometry</h2>
       <ul>
@@ -1768,19 +1769,22 @@ def write_non_trainable_outputs(
     """
     report_path.write_text(report_html, encoding="utf-8")
 
+    artifacts = {
+        "report": {
+            "path": report_path.name,
+            "sha256": sha256_of_file(report_path),
+        },
+    }
+    if training_dataset_path is not None:
+        artifacts["labeled_dataset"] = {
+            "path": training_dataset_path.name,
+            "sha256": sha256_of_file(training_dataset_path),
+        }
+
     outputs_content = {
         "phase": PHASE,
         "variant": variant,
-        "artifacts": {
-            "labeled_dataset": {
-                "path": training_dataset_path.name,
-                "sha256": sha256_of_file(training_dataset_path),
-            },
-            "report": {
-                "path": report_path.name,
-                "sha256": sha256_of_file(report_path),
-            },
-        },
+        "artifacts": artifacts,
         "exports": {
             "Tu": int(Tu),
             "OW": int(OW),
@@ -2082,6 +2086,33 @@ def main():
     parent_f03 = exports_parent.get("parent_f03")
     parent_f02 = exports_parent.get("parent_f02")
     window_strategy = exports_parent.get("window_strategy")
+    Tu = int(params.get("Tu", exports_parent.get("Tu", 0)))
+    OW = int(params.get("OW", exports_parent.get("OW", 0)))
+    LT = int(params.get("LT", exports_parent.get("LT", 0)))
+    PW = int(params.get("PW", exports_parent.get("PW", 0)))
+    model_family = params["model_family"]
+
+    if exports_parent.get("target_compatible") is False:
+        reason = exports_parent.get("incompatibility_reason") or "target incompatible"
+        write_non_trainable_outputs(
+            variant_dir=get_variant_dir(PHASE, variant),
+            variant=variant,
+            parent_variant=parent_variant,
+            training_dataset_path=None,
+            prediction_name=prediction_name,
+            model_family=model_family,
+            Tu=Tu,
+            OW=OW,
+            LT=LT,
+            PW=PW,
+            label_distribution={
+                0: int(exports_parent.get("n_negative", exports_parent.get("n_windows_neg", 0))),
+                1: int(exports_parent.get("n_positive", exports_parent.get("n_windows_pos", 0))),
+            },
+            reason=f"Parent F04 target incompatible: {reason}",
+            start_time=start_time,
+        )
+        return
 
     dataset_rel = artifacts_parent.get("dataset", {}).get("path")
     if not dataset_rel:
@@ -2094,13 +2125,6 @@ def main():
     # Label column: si F04 lo expone, lo usamos; si no, usamos 'target'
     label_col = exports_parent.get("target_column", "label")
     
-
-    Tu = int(params.get("Tu", exports_parent.get("Tu", 0)))
-    OW = int(params.get("OW", exports_parent.get("OW", 0)))
-    LT = int(params.get("LT", exports_parent.get("LT", 0)))
-    PW = int(params.get("PW", exports_parent.get("PW", 0)))
-
-    model_family = params["model_family"]
 
     automl_cfg = params.get("automl", {})
     search_space = params.get("search_space", {})

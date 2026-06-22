@@ -121,8 +121,6 @@ def compute_series_stats(df_series: pd.DataFrame, epoch_col: str, value_col: str
             "q99": safe_float(non_nan.quantile(0.99)),
             "n_unique_values": safe_int(non_nan.nunique()),
             "zero_ratio": safe_float((non_nan == 0).mean()),
-            "positive_ratio": safe_float((non_nan > 0).mean()),
-            "negative_ratio": safe_float((non_nan < 0).mean()),
         }
     else:
         desc = {

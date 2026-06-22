@@ -187,6 +187,15 @@ def _validate_basic_type(value, rule, context):
     if expected == "string" and not isinstance(value, str):
         raise RuntimeError(f"{context} debe ser string")
 
+    if expected == "boolean" and not isinstance(value, bool):
+        raise RuntimeError(f"{context} debe ser boolean")
+
+    if expected == "list" and not isinstance(value, list):
+        raise RuntimeError(f"{context} debe ser list")
+
+    if expected == "dict" and not isinstance(value, dict):
+        raise RuntimeError(f"{context} debe ser dict")
+
 # ============================================================
 # CARGA DE VARIANTES
 # ============================================================

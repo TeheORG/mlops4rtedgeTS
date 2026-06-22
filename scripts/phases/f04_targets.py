@@ -23,6 +23,7 @@ from scripts.core.traceability import validate_outputs
 # ============================================================
 PHASE = "f04_targets"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+MIN_POSITIVE_RATIO_FOR_TARGET_COMPATIBILITY = 0.001
 # ============================================================
 
 
@@ -341,6 +342,9 @@ def main():
     # --------------------------------------------------------
 
     output_path = variant_dir / "04_targets.parquet"
+    tmp_output_path = variant_dir / "04_targets.tmp.parquet"
+    if tmp_output_path.exists():
+        tmp_output_path.unlink()
 
     schema = pa.schema([
         (output_column, output_list_type),
@@ -356,7 +360,7 @@ def main():
     positives = 0
     dedup = OWDedupStats() if compute_dedup_stats else None
 
-    writer = pq.ParquetWriter(output_path, schema, compression="snappy")
+    writer = pq.ParquetWriter(tmp_output_path, schema, compression="snappy")
     try:
         for batch in parent_parquet.iter_batches(
             batch_size=batch_size,
@@ -389,6 +393,15 @@ def main():
     negatives = total - positives
     positive_ratio = positives / total if total else 0.0
     negative_ratio = negatives / total if total else 0.0
+    target_candidate_checks = [(measure_name, direction)] if measure_name and direction else []
+    target_compatible = positive_ratio >= MIN_POSITIVE_RATIO_FOR_TARGET_COMPATIBILITY
+    incompatibility_reason = None
+    if not target_compatible:
+        incompatibility_reason = (
+            f"positive_ratio={positive_ratio:.6f} below minimum "
+            f"{MIN_POSITIVE_RATIO_FOR_TARGET_COMPATIBILITY:.6f}"
+        )
+
     if dedup is not None:
         dedup_stats = dedup.to_dict()
         dedup_stats["source"] = "f04_streaming_hash"
@@ -401,6 +414,9 @@ def main():
     print(f"[INFO] Positivas: {positives}")
     print(f"[INFO] Negativas: {negatives}")
     print(f"[INFO] Positive ratio: {positive_ratio:.6f}")
+    print(f"[INFO] Target compatible: {target_compatible}")
+    if incompatibility_reason is not None:
+        print(f"[WARN] Target incompatible: {incompatibility_reason}")
 
     # --------------------------------------------------------
     # Report
@@ -429,6 +445,8 @@ def main():
         <p>Negatives: {negatives}</p>
         <p>Positive ratio: {positive_ratio:.6f}</p>
         <p>Negative ratio: {negative_ratio:.6f}</p>
+        <p>Target compatible: {target_compatible}</p>
+        <p>Incompatibility reason: {incompatibility_reason}</p>
         </body>
         </html>
         """,
@@ -444,19 +462,30 @@ def main():
     dup_ratio_pw = parent_exports.get("dup_ratio_pw")
     seq_len_mean_ow = parent_exports.get("seq_len_mean_ow")
 
+    artifacts = {
+        "report": {
+            "path": report_path.name,
+            "sha256": sha256_of_file(report_path),
+        },
+    }
+    if target_compatible:
+        if output_path.exists():
+            output_path.unlink()
+        tmp_output_path.replace(output_path)
+        artifacts["dataset"] = {
+            "path": output_path.name,
+            "sha256": sha256_of_file(output_path),
+        }
+    else:
+        if tmp_output_path.exists():
+            tmp_output_path.unlink()
+        if output_path.exists():
+            output_path.unlink()
+
     outputs_content = {
         "phase": PHASE,
         "variant": variant,
-        "artifacts": {
-            "dataset": {
-                "path": output_path.name,
-                "sha256": sha256_of_file(output_path),
-            },
-            "report": {
-                "path": report_path.name,
-                "sha256": sha256_of_file(report_path),
-            },
-        },
+        "artifacts": artifacts,
         "exports": {
             "Tu": parent_exports.get("Tu", params.get("Tu")),
             "OW": parent_exports.get("OW", params.get("OW")),
@@ -481,9 +510,17 @@ def main():
             "n_windows": int(total),
             "n_windows_pos": int(positives),
             "n_windows_neg": int(negatives),
+            "n_positive": int(positives),
+            "n_negative": int(negatives),
             "positive_ratio": float(positive_ratio),
             "negative_ratio": float(negative_ratio),
             "class_balance_ratio": float(positive_ratio),
+            "target_compatible": bool(target_compatible),
+            "incompatibility_reason": incompatibility_reason,
+            "target_candidate_checks": [
+                {"measure": measure, "direction": direction}
+                for measure, direction in target_candidate_checks
+            ],
             "deduplication_stats": dedup_stats,
             "unique_ratio": dedup_stats["unique_ow_sequences"] / total if total else 0.0,
             "dup_ratio_ow_parent": dup_ratio_ow,
@@ -497,6 +534,10 @@ def main():
             "n_windows": int(total),
             "n_windows_pos": int(positives),
             "n_windows_neg": int(negatives),
+            "n_positive": int(positives),
+            "n_negative": int(negatives),
+            "target_compatible": bool(target_compatible),
+            "incompatibility_reason": incompatibility_reason,
             "threshold_value": float(threshold_value) if threshold_value is not None else None,
         },
         "provenance": {
@@ -507,7 +548,10 @@ def main():
     save_outputs_yaml(variant_dir, outputs_content)
     validate_outputs(PHASE, outputs_content)
 
-    print(f"\n===== FASE {PHASE} COMPLETADA =====")
+    if target_compatible:
+        print(f"\n===== FASE {PHASE} COMPLETADA =====")
+    else:
+        print(f"\n===== FASE {PHASE} COMPLETADA SIN DATASET =====")
 
 
 if __name__ == "__main__":

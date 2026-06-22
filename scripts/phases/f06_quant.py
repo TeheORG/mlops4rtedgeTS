@@ -339,16 +339,98 @@ def main():
 
     parent_outputs, parent_dir = load_phase_outputs(PROJECT_ROOT, PARENT_PHASE, parent_variant, "F06")
 
-    parent_artifacts = parent_outputs.get("artifacts", {}) or {}
     exports_parent = parent_outputs.get("exports", {}) or {}
 
+    variant_dir = get_variant_dir(PHASE, variant)
+    variant_dir.mkdir(parents=True, exist_ok=True)
+
+    model_family = str(
+        exports_parent.get("model_family")
+        or params.get("model_family")
+        or ""
+    )
+    resolved_tu = params.get("Tu") if params.get("Tu") is not None else exports_parent.get("Tu")
+    resolved_ow = params.get("OW") if params.get("OW") is not None else exports_parent.get("OW")
+    resolved_lt = params.get("LT") if params.get("LT") is not None else exports_parent.get("LT")
+    resolved_pw = params.get("PW") if params.get("PW") is not None else exports_parent.get("PW")
+    resolved_prediction_name = params.get("prediction_name") or exports_parent.get("prediction_name")
+    runtime_model_name = f"{resolved_prediction_name}-{model_family}-{parent_variant}"
+
+    parent_reason = exports_parent.get("incompatibility_reason")
+    if exports_parent.get("trainable") is False or parent_reason:
+        incompat_reason = (
+            "Parent F05 not trainable: "
+            f"{parent_reason or 'trainable=false'}"
+        )
+        execution_time = time.perf_counter() - t0
+        report_path = variant_dir / "06_quant_report.html"
+        report_path.write_text(
+            f"""
+            <html>
+            <body>
+              <h1>F06 Quantization - {variant}</h1>
+              <p><b>Parent F05:</b> {parent_variant}</p>
+              <p><b>Model family:</b> {model_family}</p>
+              <h2>Compatibility</h2>
+              <ul>
+                <li>edge_capable = False</li>
+                <li>incompatibility_reason = {incompat_reason}</li>
+              </ul>
+              <h2>Execution</h2>
+              <p>execution_time = {execution_time:.2f} s</p>
+            </body>
+            </html>
+            """,
+            encoding="utf-8",
+        )
+        outputs = {
+            "phase": PHASE,
+            "variant": variant,
+            "artifacts": {
+                "report": {
+                    "path": report_path.name,
+                    "sha256": sha256_of_file(report_path),
+                },
+            },
+            "exports": {
+                "Tu": int(resolved_tu or 0),
+                "OW": int(resolved_ow or 0),
+                "LT": int(resolved_lt or 0),
+                "PW": int(resolved_pw or 0),
+                "prediction_name": str(resolved_prediction_name or "prediction"),
+                "runtime_model_name": str(runtime_model_name),
+                "model_family": str(model_family or "unknown"),
+                "edge_capable": False,
+                "incompatibility_reason": incompat_reason,
+                **TS_INPUT_METADATA,
+            },
+            "metrics": {
+                "execution_time": float(execution_time),
+                **TS_INPUT_METADATA,
+                "normalization_mean": None,
+                "normalization_std": None,
+                "tflm_compatible": False,
+                "operators_detected": 0,
+                "unsupported_operators": 0,
+                "n_calibration_samples": 0,
+            },
+            "provenance": {
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "parent_phase": PARENT_PHASE,
+                "parent_variant": parent_variant,
+            },
+        }
+        save_outputs_yaml(variant_dir, outputs)
+        validate_outputs(PHASE, outputs)
+        print(f"[WARN] F06 skipped quantization: {incompat_reason}")
+        print("[DONE] F06 completed - edge_capable=False")
+        return
+
+    parent_artifacts = parent_outputs.get("artifacts", {}) or {}
     dataset_path = parent_dir / parent_artifacts["labeled_dataset"]["path"]
     model_rel = (parent_artifacts.get("model") or {}).get("path")
     model_path = parent_dir / model_rel if model_rel else None
     parent_trainable = bool(exports_parent.get("trainable", model_path is not None))
-
-    variant_dir = get_variant_dir(PHASE, variant)
-    variant_dir.mkdir(parents=True, exist_ok=True)
 
     # Copia dataset + modelo (fase autocontenida)
     dst_dataset = variant_dir / "06_calibration_dataset.parquet"
@@ -377,12 +459,6 @@ def main():
             "No se pudo resolver columna objetivo. "
             "Se intentó con exports.target_column, 'label' y exports.prediction_name"
         )
-
-    model_family = str(
-        exports_parent.get("model_family")
-        or params.get("model_family")
-        or ""
-    )
 
     model = None
     X = None
