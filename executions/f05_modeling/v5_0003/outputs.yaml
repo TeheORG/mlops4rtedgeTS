@@ -199,3 +199,7 @@ mlflow_registration:
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0003/05_modeling_model.h5
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0003/05_modeling_history.json
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0003/05_modeling_trials_summary.json
+mlflow:
+  run_id: 9cc1978f173e4aeea112c741d5e14fa3
+  experiment_id: '4'
+  experiment_name: F05_ge_active_power_low_10
