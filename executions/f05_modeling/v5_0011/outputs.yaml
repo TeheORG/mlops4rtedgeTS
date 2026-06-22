@@ -199,3 +199,7 @@ mlflow_registration:
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0011/05_modeling_model.h5
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0011/05_modeling_history.json
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0011/05_modeling_trials_summary.json
+mlflow:
+  run_id: debc9b813fd84faaab019bf1f33a0a7b
+  experiment_id: '12'
+  experiment_name: F05_pvpcs_active_power_low_10
