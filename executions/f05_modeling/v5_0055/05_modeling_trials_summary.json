@@ -1,0 +1,74 @@
+[
+  {
+    "trial_id": 0,
+    "hyperparameters": {
+      "batch_size": 128,
+      "learning_rate": 0.0005,
+      "n_layers": 2,
+      "units": 64,
+      "dropout": 0.0,
+      "filters": 128,
+      "kernel_size": 3
+    },
+    "decision_threshold": 0.9426155090332031,
+    "threshold_source": "validation",
+    "threshold_policy": "optimal_f2",
+    "threshold_metric": "f2",
+    "threshold_warning": null,
+    "val_precision": 0.9745791824115424,
+    "val_recall": 0.9989436619718309,
+    "val_f1": 0.9866110241697096,
+    "val_pr_auc": 0.9997459107906768,
+    "epochs": 5,
+    "batch_size": 128,
+    "requested_batch_size": 128
+  },
+  {
+    "trial_id": 1,
+    "hyperparameters": {
+      "batch_size": 256,
+      "learning_rate": 0.001,
+      "n_layers": 1,
+      "units": 128,
+      "dropout": 0.2,
+      "filters": 128,
+      "kernel_size": 5
+    },
+    "decision_threshold": 0.9632079005241394,
+    "threshold_source": "validation",
+    "threshold_policy": "optimal_f2",
+    "threshold_metric": "f2",
+    "threshold_warning": null,
+    "val_precision": 0.9748968363136176,
+    "val_recall": 0.9982394366197183,
+    "val_f1": 0.9864300626304802,
+    "val_pr_auc": 0.9997474002540121,
+    "epochs": 5,
+    "batch_size": 256,
+    "requested_batch_size": 256
+  },
+  {
+    "trial_id": 2,
+    "hyperparameters": {
+      "batch_size": 256,
+      "learning_rate": 0.0005,
+      "n_layers": 2,
+      "units": 64,
+      "dropout": 0.2,
+      "filters": 64,
+      "kernel_size": 5
+    },
+    "decision_threshold": 0.9595651626586914,
+    "threshold_source": "validation",
+    "threshold_policy": "optimal_f2",
+    "threshold_metric": "f2",
+    "threshold_warning": null,
+    "val_precision": 0.974914089347079,
+    "val_recall": 0.9989436619718309,
+    "val_f1": 0.9867826086956522,
+    "val_pr_auc": 0.999756771020818,
+    "epochs": 5,
+    "batch_size": 256,
+    "requested_batch_size": 256
+  }
+]
