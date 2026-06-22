@@ -2,7 +2,7 @@ created_at: '2026-06-22T22:34:38.511305+00:00'
 params_path: executions/f03_windows/v3_0001/params.yaml
 lifecycle_state: EXECUTION_COMPLETED
 lifecycle_updated_at: '2026-06-22T22:35:19.093558+00:00'
-verified: none
-verified_updated_at: '2026-06-22T22:34:47.062679+00:00'
+verified: true
+verified_updated_at: '2026-06-22T22:35:31.700625+00:00'
 registred: none
 runner: GithubActions
