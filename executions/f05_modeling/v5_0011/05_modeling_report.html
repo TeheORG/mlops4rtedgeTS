@@ -1,0 +1,62 @@
+
+    <html>
+    <body>
+      <h1>F05 Modeling — v5_0011</h1>
+      <p><b>Parent F04:</b> v4_0011</p>
+      <p><b>Prediction:</b> pvpcs_active_power_low_10</p>
+      <p><b>Model family:</b> cnn1d</p>
+      <h2>Geometry</h2>
+      <ul>
+        <li>Tu = 10</li>
+        <li>OW = 50</li>
+        <li>LT = 10</li>
+        <li>PW = 10</li>
+      </ul>
+      <h2>AutoML</h2>
+      <pre>{
+  "batch_size": 256,
+  "learning_rate": 0.001,
+  "n_layers": 1,
+  "units": 128,
+  "dropout": 0.2,
+  "filters": 128,
+  "kernel_size": 5
+}</pre>
+      <h2>Validation @selected threshold</h2>
+      <p>val_precision = 0.9898</p>
+      <p>val_recall = 0.9978</p>
+      <p>val_f1 = 0.9938</p>
+      <p>val_pr_auc = 0.9994</p>
+      <h2>Test @selected threshold</h2>
+      <ul>
+        <li>precision = 0.9898</li>
+        <li>recall = 0.9979</li>
+        <li>f1 = 0.9938</li>
+        <li>pr_auc = 0.9990</li>
+                <li>tp = 12981</li>
+                <li>tn = 6858</li>
+                <li>fp = 134</li>
+                <li>fn = 27</li>
+      </ul>
+      <h2>Threshold</h2>
+      <ul>
+        <li>decision_threshold = 0.885553</li>
+        <li>threshold_source = validation</li>
+        <li>threshold_policy = optimal_f2</li>
+        <li>threshold_metric = f2</li>
+        <li>threshold_warning = None</li>
+      </ul>
+      <h2>Split Leakage Audit</h2>
+      <ul>
+        <li>possible_split_leakage = False</li>
+        <li>high_split_leakage_warning = False</li>
+        <li>max_overlap_pct = 0.0000</li>
+      </ul>
+      <h3>exact_duplicates</h3><p><em>Análisis desactivado.</em></p>
+      <h3>unordered_duplicates</h3><p><em>Análisis desactivado.</em></p>
+      <h3>near_duplicates</h3><p><em>Análisis desactivado.</em></p>
+      <h2>Execution</h2>
+      <p>execution_time = 864.5 s</p>
+    </body>
+    </html>
+    
