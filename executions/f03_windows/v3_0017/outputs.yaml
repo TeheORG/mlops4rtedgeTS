@@ -1,0 +1,33 @@
+phase: f03_windows
+variant: v3_0017
+artifacts:
+  dataset:
+    path: 03_windows.parquet
+    sha256: 5cc1d18a4d2dfc2cedb100cdd4b1909d382ec59b11c9bd52f0292f17c2d7b761
+  report:
+    path: 03_windows_report.html
+    sha256: 226c3062d06f4249c3a2777d0dff71bb91ad330d30f802765e1465e476ba81a2
+exports:
+  Tu: 10
+  OW: 90
+  LT: 10
+  PW: 10
+  Ratio_PW_OW: 0.1111111111111111
+  window_strategy: synchro
+  nan_mode: discard
+  parent_f02: v2_0008
+  n_windows: 3880835
+  n_unique_ow_hash: 3644014
+  n_unique_pw_hash: 107671
+  dup_ratio_ow: 0.06102320763443947
+  dup_ratio_pw: 0.9722557130102156
+  seq_len_mean_ow: 89.97219412832547
+  seq_len_mean_pw: 9.99691045870283
+  seq_len_std_ow: 1.346503256250984
+  seq_len_std_pw: 0.1730621333291709
+metrics:
+  execution_time: 34.438455159000014
+  n_rows_in: 3887242
+  n_windows_out: 3880835
+provenance:
+  generated_at: '2026-06-22T22:33:08.732243+00:00'
