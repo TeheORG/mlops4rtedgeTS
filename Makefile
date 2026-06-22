@@ -260,7 +260,7 @@ endef
 # Update lifecycle state in metadata.yaml for a concrete phase/variant.
 # Usage:
 #   $(UPDATE_VARIANT_STATE) <phase> <variant> <state>
-UPDATE_VARIANT_STATE = $(PYTHON) -c 'import sys, yaml; from pathlib import Path; from datetime import datetime, timezone; phase, variant, state = sys.argv[1], sys.argv[2], sys.argv[3]; variant_dir = Path("executions") / phase / variant; meta_path = variant_dir / "metadata.yaml"; data = {}; \
+UPDATE_VARIANT_STATE = $(PYTHON) -c 'import sys, os, yaml; from pathlib import Path; from datetime import datetime, timezone; phase, variant, state = sys.argv[1], sys.argv[2], sys.argv[3]; variant_dir = Path("executions") / phase / variant; meta_path = variant_dir / "metadata.yaml"; data = {}; \
 variant_dir.exists() or sys.exit(0); \
 data = yaml.safe_load(meta_path.read_text()) if meta_path.exists() else {}; \
 data = data if isinstance(data, dict) else {}; \
@@ -268,8 +268,9 @@ data.setdefault("params_path", str((variant_dir / "params.yaml").as_posix())); \
 data.setdefault("created_at", datetime.now(timezone.utc).isoformat()); \
 data["lifecycle_state"] = state; \
 data["lifecycle_updated_at"] = datetime.now(timezone.utc).isoformat(); \
+data["runner"] = os.environ.get("MLOPS_RUNNER") or os.popen("whoami").read().strip(); \
 data.setdefault("registred", "none"); \
-preferred = ["created_at", "params_path", "lifecycle_state", "lifecycle_updated_at", "verified", "verified_updated_at", "registred"]; \
+preferred = ["created_at", "params_path", "lifecycle_state", "lifecycle_updated_at", "verified", "verified_updated_at", "registred", "runner"]; \
 ordered = {k: data[k] for k in preferred if k in data}; \
 ordered.update({k: v for k, v in data.items() if k not in ordered}); \
 data = ordered; \
@@ -288,7 +289,7 @@ verified_map = {"true": True, "false": False, "none": "none", "not_checked": "no
 data["verified"] = verified_map.get(verified_raw, "none"); \
 data["verified_updated_at"] = datetime.now(timezone.utc).isoformat(); \
 data.setdefault("registred", "none"); \
-preferred = ["created_at", "params_path", "lifecycle_state", "lifecycle_updated_at", "verified", "verified_updated_at", "registred"]; \
+preferred = ["created_at", "params_path", "lifecycle_state", "lifecycle_updated_at", "verified", "verified_updated_at", "registred", "runner"]; \
 ordered = {k: data[k] for k in preferred if k in data}; \
 ordered.update({k: v for k, v in data.items() if k not in ordered}); \
 data = ordered; \
@@ -306,7 +307,7 @@ data.setdefault("created_at", datetime.now(timezone.utc).isoformat()); \
 data.setdefault("verified", "none"); \
 registred_map = {"true": True, "false": False, "none": "none", "not_checked": "none", "no": "none", "no_hecho": "none"}; \
 data["registred"] = registred_map.get(registred_raw, "none"); \
-preferred = ["created_at", "params_path", "lifecycle_state", "lifecycle_updated_at", "verified", "verified_updated_at", "registred"]; \
+preferred = ["created_at", "params_path", "lifecycle_state", "lifecycle_updated_at", "verified", "verified_updated_at", "registred", "runner"]; \
 ordered = {k: data[k] for k in preferred if k in data}; \
 ordered.update({k: v for k, v in data.items() if k not in ordered}); \
 data = ordered; \

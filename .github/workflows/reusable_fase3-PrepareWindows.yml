@@ -19,6 +19,10 @@ on:
         required: false
         type: string
         default: '"ubuntu-latest"'
+      runner_name:
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -33,6 +37,7 @@ jobs:
       USE_VENV: 0
       SKIP_GIT_PUBLISH: "1"
       SKIP_LINEAGE: "1"
+      MLOPS_RUNNER: ${{ inputs.runner_name }}
       DAGSHUB_USER: ${{ secrets.DAGSHUB_USER }}
       DAGSHUB_TOKEN: ${{ secrets.DAGSHUB_TOKEN }}
       VARIANT_ROOT: executions/f03_windows/${{ inputs.variant_id }}
@@ -239,7 +244,29 @@ jobs:
       # =========================================================
       # STEP 4: register3
       # =========================================================
+      - name: Wait for DagsHub MLflow availability
+        run: |
+          MLFLOW_URI=$(python3 -c 'import pathlib,yaml; p=pathlib.Path(".mlops4ofp/setup.yaml"); cfg=(yaml.safe_load(p.read_text()) if p.exists() else {}); uri=cfg.get("mlflow",{}).get("tracking_uri",""); print(uri)' 2>/dev/null)
+          if [ -z "$MLFLOW_URI" ]; then
+            echo "[INFO] No MLflow tracking URI found, skipping health check"
+            exit 0
+          fi
+          echo "[INFO] Checking DagsHub MLflow availability at $MLFLOW_URI"
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$MLFLOW_URI/api/2.0/mlflow/experiments/list" || echo "000")
+            if [ "$STATUS" != "000" ] && [ "$STATUS" -lt 500 ]; then
+              echo "[OK] DagsHub MLflow is responding (HTTP $STATUS, attempt $i)"
+              exit 0
+            fi
+            echo "[WAIT] DagsHub returned HTTP $STATUS, retrying in 2s... ($i/30)"
+            sleep 2
+          done
+          echo "[ERROR] DagsHub MLflow not available after 60s"
+          exit 1
+
       - name: Registrar resultados de Fase 3
+        env:
+          MLFLOW_HTTP_REQUEST_MAX_RETRIES: "6"
         run: make register3 VARIANT=${{ inputs.variant_id }}
 
       - name: PR — publicar register
