@@ -1,0 +1,113 @@
+
+    <!doctype html>
+    <html lang="es">
+    <head>
+      <meta charset="utf-8">
+      <title>F02 Series - v2_0002</title>
+      <style>
+        body {
+          margin: 0;
+          background: #f6f8fb;
+          color: #172033;
+          font-family: Arial, sans-serif;
+          line-height: 1.45;
+        }
+        main {
+          max-width: 1100px;
+          margin: 0 auto;
+          padding: 28px;
+        }
+        .hero {
+          background: #ffffff;
+          border: 1px solid #d9e0ea;
+          border-radius: 10px;
+          padding: 22px;
+          box-shadow: 0 10px 24px rgba(23, 32, 51, 0.06);
+        }
+        h1 {
+          margin: 0 0 10px;
+          font-size: 28px;
+        }
+        .meta {
+          color: #667085;
+          font-size: 14px;
+        }
+        code {
+          background: #eef3f8;
+          padding: 2px 5px;
+          border-radius: 4px;
+        }
+        .kpi-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 12px;
+          margin-top: 18px;
+        }
+        .card {
+          border: 1px solid #d9e0ea;
+          border-radius: 8px;
+          padding: 14px;
+          background: #ffffff;
+        }
+        .card .k {
+          color: #667085;
+          font-size: 12px;
+          text-transform: uppercase;
+          font-weight: 700;
+        }
+        .card .v {
+          margin-top: 8px;
+          font-size: 22px;
+          font-weight: 800;
+        }
+        .panel {
+          margin-top: 22px;
+          background: #ffffff;
+          border: 1px solid #d9e0ea;
+          border-radius: 10px;
+          padding: 18px;
+        }
+        .tbl {
+          border-collapse: collapse;
+          width: 100%;
+          font-size: 13px;
+        }
+        .tbl th, .tbl td {
+          border: 1px solid #d9e0ea;
+          padding: 8px 10px;
+          text-align: left;
+        }
+        .tbl th {
+          background: #eef3f8;
+        }
+      </style>
+    </head>
+    <body>
+      <main>
+        <section class="hero">
+          <h1>F02 Series - v2_0002</h1>
+          <p class="meta">
+            Parent: <code>v1_0000</code> |
+            Measure: <code>Outlet_Temperature</code> |
+            Epoch column: <code>segs</code> |
+            Value column: <code>value</code>
+          </p>
+
+          <div class="kpi-grid">
+            <div class="card"><div class="k">Rows</div><div class="v">3887242</div></div>
+            <div class="card"><div class="k">NaN ratio</div><div class="v">0.07%</div></div>
+            <div class="card"><div class="k">Min</div><div class="v">5.6</div></div>
+            <div class="card"><div class="k">Max</div><div class="v">33.0</div></div>
+            <div class="card"><div class="k">Mean</div><div class="v">18.73938314989323</div></div>
+            <div class="card"><div class="k">Median</div><div class="v">18.0</div></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Métricas completas</h2>
+          <table class="tbl"><thead><tr><th>Métrica</th><th>Valor</th></tr></thead><tbody><tr><td><code>n_rows</code></td><td>3887242</td></tr><tr><td><code>n_non_nan</code></td><td>3884625</td></tr><tr><td><code>n_nan</code></td><td>2617</td></tr><tr><td><code>nan_ratio</code></td><td>0.0006732279595661911</td></tr><tr><td><code>non_nan_ratio</code></td><td>0.9993267720404339</td></tr><tr><td><code>time_start</code></td><td>1651363201</td></tr><tr><td><code>time_end</code></td><td>1690845831</td></tr><tr><td><code>time_span</code></td><td>39482630</td></tr><tr><td><code>n_steps</code></td><td>3887241</td></tr><tr><td><code>Tu</code></td><td>10</td></tr><tr><td><code>n_consecutive_steps</code></td><td>3887230</td></tr><tr><td><code>n_broken_steps</code></td><td>11</td></tr><tr><td><code>consecutive_ratio</code></td><td>0.9999971702294764</td></tr><tr><td><code>broken_ratio</code></td><td>2.829770523618165e-06</td></tr><tr><td><code>min</code></td><td>5.6</td></tr><tr><td><code>max</code></td><td>33.0</td></tr><tr><td><code>mean</code></td><td>18.73938314989323</td></tr><tr><td><code>median</code></td><td>18.0</td></tr><tr><td><code>std</code></td><td>6.359234117663821</td></tr><tr><td><code>var</code></td><td>40.439858563259556</td></tr><tr><td><code>q01</code></td><td>9.0</td></tr><tr><td><code>q05</code></td><td>10.2</td></tr><tr><td><code>q10</code></td><td>10.9</td></tr><tr><td><code>q25</code></td><td>12.8</td></tr><tr><td><code>q75</code></td><td>24.700001</td></tr><tr><td><code>q90</code></td><td>27.5</td></tr><tr><td><code>q95</code></td><td>28.700001</td></tr><tr><td><code>q99</code></td><td>30.9</td></tr><tr><td><code>n_unique_values</code></td><td>275</td></tr><tr><td><code>zero_ratio</code></td><td>0.0</td></tr><tr><td><code>measure_name</code></td><td>Outlet_Temperature</td></tr><tr><td><code>epoch_col</code></td><td>segs</td></tr><tr><td><code>value_col</code></td><td>value</td></tr><tr><td><code>parent_variant</code></td><td>v1_0000</td></tr></tbody></table>
+        </section>
+      </main>
+    </body>
+    </html>
+    
