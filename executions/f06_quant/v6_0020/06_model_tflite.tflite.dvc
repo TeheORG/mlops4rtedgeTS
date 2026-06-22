@@ -1,0 +1,5 @@
+outs:
+- md5: b7dafb3d40f15aab860d6f9043ca4418
+  size: 21440
+  hash: md5
+  path: 06_model_tflite.tflite
