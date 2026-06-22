@@ -1,0 +1,45 @@
+phase: f02_events
+variant: v2_0003
+artifacts:
+  stats:
+    path: 02_series_stats.json
+    sha256: 888a5e9e06c88f3a0259b6b65fbb1f8da72a5ccb4cb4d4f8ecc11a661cf2bb31
+  report:
+    path: 02_series_report.html
+    sha256: aebe2ccef0879ba91cc0fb37ec2673485d4734fa362f84b3d5677eafe22b5b52
+  series:
+    path: 02_series.parquet
+    sha256: 24e42012703275726b1c9654ee474d5bddf83ec276d678ebd98fc7cfdbb55bcf
+exports:
+  Tu: 10
+  measure_name: PVPCS_Active_Power
+  epoch_col: segs
+  value_col: value
+  n_rows: 3887242
+  n_non_nan: 3884671
+  nan_ratio: 0.0006613943767843628
+  compatible: true
+  measure_compatible: true
+  incompatibility_reason: null
+metrics:
+  execution_time: 1.8422112260000034
+  n_rows: 3887242
+  n_non_nan: 3884671
+  n_nan: 2571
+  nan_ratio: 0.0006613943767843628
+  non_nan_ratio: 0.9993386056232156
+  min: -3.0
+  max: 51.0
+  mean: 8.553861832829602
+  median: 0.0
+  std: 13.896095025880232
+  q05: -1.0
+  q95: 39.0
+  zero_ratio: 0.5524439521390615
+  consecutive_ratio: 0.9999971702294764
+  broken_ratio: 2.829770523618165e-06
+  compatible: true
+  measure_compatible: true
+  incompatibility_reason: null
+provenance:
+  generated_at: '2026-06-22T15:54:56.322525+00:00'
