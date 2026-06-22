@@ -1,0 +1,5 @@
+outs:
+- md5: 3a749abd49785b4f8d59eb160c5b350e
+  size: 58152
+  hash: md5
+  path: 05_modeling_model.h5
