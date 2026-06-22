@@ -1,0 +1,66 @@
+phase: f04_targets
+variant: v4_0059
+artifacts:
+  report:
+    path: 04_targets_report.html
+    sha256: 302c8b5fb1a3d9d0e9954c571eb683db88f227862e5c473cb34771009af079a0
+exports:
+  Tu: 10
+  OW: 90
+  LT: 10
+  PW: 10
+  prediction_name: battery_active_power_low_10
+  event_strategy: threshold
+  label_rule: any(PW_values low threshold)
+  input_window_column: OW_values
+  measure_name: Battery_Active_Power
+  value_col: value
+  direction: low
+  threshold_percentage: 10.0
+  threshold_value: -183.1300025
+  min_value: -216.800003
+  max_value: 119.900002
+  window_strategy: synchro
+  parent_f03: v3_0015
+  parent_f02: v2_0006
+  n_windows: 3880849
+  n_windows_pos: 488
+  n_windows_neg: 3880361
+  n_positive: 488
+  n_negative: 3880361
+  positive_ratio: 0.00012574568090642022
+  negative_ratio: 0.9998742543190936
+  class_balance_ratio: 0.00012574568090642022
+  target_compatible: false
+  incompatibility_reason: positive_ratio=0.000126 below minimum 0.001000
+  target_candidate_checks:
+  - measure: Battery_Active_Power
+    direction: low
+  deduplication_stats:
+    total_sequences: 3880849
+    unique_ow_sequences: 2797885
+    num_duplicate_sequences: 1082964
+    duplicate_ratio: 0.27905337208430425
+    ambiguous_sequences: null
+    ambiguous_samples: null
+    ambiguous_ratio: null
+    avg_label_consistency_per_ow: null
+    source: parent_f03
+  unique_ratio: 0.7209466279156957
+  dup_ratio_ow_parent: 0.27905337208430425
+  dup_ratio_pw_parent: 0.39193872268671104
+  seq_len_mean_ow_parent: 89.972194228634
+metrics:
+  execution_time: 9.942746872
+  positive_ratio: 0.00012574568090642022
+  negative_ratio: 0.9998742543190936
+  n_windows: 3880849
+  n_windows_pos: 488
+  n_windows_neg: 3880361
+  n_positive: 488
+  n_negative: 3880361
+  target_compatible: false
+  incompatibility_reason: positive_ratio=0.000126 below minimum 0.001000
+  threshold_value: -183.1300025
+provenance:
+  generated_at: '2026-06-22T22:50:45.458698+00:00'
