@@ -1,0 +1,69 @@
+phase: f04_targets
+variant: v4_0056
+artifacts:
+  report:
+    path: 04_targets_report.html
+    sha256: 88885dd8216e71bf4e3c5b61872e63bc6ea4b2e9610d967a457f61a6675b9b09
+  dataset:
+    path: 04_targets.parquet
+    sha256: 619ac2fd3cf709fa0b3808f7cb859f4bd68176b4d90234a9c06e9df9e1f00f27
+exports:
+  Tu: 10
+  OW: 90
+  LT: 10
+  PW: 10
+  prediction_name: inlet_temperature_of_chilled_water_low_20
+  event_strategy: threshold
+  label_rule: any(PW_values low threshold)
+  input_window_column: OW_values
+  measure_name: Inlet_Temperature_of_Chilled_Water
+  value_col: value
+  direction: low
+  threshold_percentage: 20.0
+  threshold_value: 11.860000200000002
+  min_value: 5.9
+  max_value: 35.700001
+  window_strategy: synchro
+  parent_f03: v3_0014
+  parent_f02: v2_0005
+  n_windows: 3880122
+  n_windows_pos: 1049302
+  n_windows_neg: 2830820
+  n_positive: 1049302
+  n_negative: 2830820
+  positive_ratio: 0.27043015657755093
+  negative_ratio: 0.7295698434224491
+  class_balance_ratio: 0.27043015657755093
+  target_compatible: true
+  incompatibility_reason: null
+  target_candidate_checks:
+  - measure: Inlet_Temperature_of_Chilled_Water
+    direction: low
+  deduplication_stats:
+    total_sequences: 3880122
+    unique_ow_sequences: 3542888
+    num_duplicate_sequences: 337234
+    duplicate_ratio: 0.0869132465422479
+    ambiguous_sequences: null
+    ambiguous_samples: null
+    ambiguous_ratio: null
+    avg_label_consistency_per_ow: null
+    source: parent_f03
+  unique_ratio: 0.9130867534577521
+  dup_ratio_ow_parent: 0.08691324654224786
+  dup_ratio_pw_parent: 0.9288782672297418
+  seq_len_mean_ow_parent: 89.9721890187989
+metrics:
+  execution_time: 10.48672737599999
+  positive_ratio: 0.27043015657755093
+  negative_ratio: 0.7295698434224491
+  n_windows: 3880122
+  n_windows_pos: 1049302
+  n_windows_neg: 2830820
+  n_positive: 1049302
+  n_negative: 2830820
+  target_compatible: true
+  incompatibility_reason: null
+  threshold_value: 11.860000200000002
+provenance:
+  generated_at: '2026-06-22T22:40:18.703656+00:00'
