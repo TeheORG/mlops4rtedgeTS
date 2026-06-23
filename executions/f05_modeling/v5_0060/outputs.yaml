@@ -199,3 +199,7 @@ mlflow_registration:
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0060/05_modeling_model.h5
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0060/05_modeling_history.json
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0060/05_modeling_trials_summary.json
+mlflow:
+  run_id: 3dfbe13d92584ef395d9fc62f6828bbb
+  experiment_id: '27'
+  experiment_name: F05_battery_active_power_low_20
