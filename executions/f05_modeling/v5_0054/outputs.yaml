@@ -199,3 +199,7 @@ mlflow_registration:
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0054/05_modeling_model.h5
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0054/05_modeling_history.json
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0054/05_modeling_trials_summary.json
+mlflow:
+  run_id: 15fc64b1650d4d4bab239bd83e3fe24c
+  experiment_id: '13'
+  experiment_name: F05_inlet_temperature_of_chilled_water_high_80
