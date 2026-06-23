@@ -4,5 +4,5 @@ lifecycle_state: EXECUTION_COMPLETED
 lifecycle_updated_at: '2026-06-23T00:12:58.134330+00:00'
 verified: true
 verified_updated_at: '2026-06-23T00:13:06.325860+00:00'
-registred: none
+registred: true
 runner: GithubActions
