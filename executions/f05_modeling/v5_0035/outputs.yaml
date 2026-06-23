@@ -199,3 +199,7 @@ mlflow_registration:
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0035/05_modeling_model.h5
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0035/05_modeling_history.json
   - /__w/mlops4rtedgeTS/mlops4rtedgeTS/executions/f05_modeling/v5_0035/05_modeling_trials_summary.json
+mlflow:
+  run_id: 1b8a7703abbc40bd8d567512bd2b9f45
+  experiment_id: '25'
+  experiment_name: F05_island_mode_mccb_active_power_low_10
