@@ -7,6 +7,9 @@ _HEAP_FREE_MIN_VALID = 1000
 
 def compute_memory_summary(df):
 
+    if "event_name" not in df.columns:
+        return {}
+
     mem = df[df["event_name"].str.contains("MEM")]
 
     heap_total_ref = None

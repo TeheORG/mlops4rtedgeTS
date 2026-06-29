@@ -13,6 +13,9 @@ import shutil
 import os
 import shlex
 import platform
+import re
+import hashlib
+import json
 from pathlib import Path
 
 import serial
@@ -30,11 +33,16 @@ DEFAULT_FLASH_BAUD = 115200
 # None  → usa toda la RAM disponible del sistema (comportamiento por defecto)
 # "8g"  → limita a 8 GB RAM (recomendado si el sistema tiene poca RAM libre)
 DOCKER_MEMORY_LIMIT: str | None = None
+BUILD_INPUTS_STAMP = ".f07_build_inputs.sha256"
 
 
 # ============================================================
 # UTILIDADES
 # ============================================================
+
+def use_native_idf() -> bool:
+    """Usa idf.py del entorno actual en vez del contenedor Docker de build."""
+    return os.environ.get("F07_IDF_RUNNER", "").strip().lower() == "native"
 
 def run_and_log(
     cmd,
@@ -136,6 +144,113 @@ def _tail_text(path: Path, max_lines: int = 80) -> str:
     return "\n".join(lines[-max_lines:])
 
 
+def detect_partition_too_small(log_path: Path) -> dict | None:
+    text = log_path.read_text(errors="replace") if log_path.exists() else ""
+    if "app partition is too small" not in text:
+        return None
+
+    size_match = re.search(r"binary\s+\S+\.bin\s+size\s+0x([0-9a-fA-F]+)", text)
+    part_match = re.search(
+        r"Part '([^']+)'.*?size\s+0x([0-9a-fA-F]+)\s+\(overflow\s+0x([0-9a-fA-F]+)\)",
+        text,
+        re.DOTALL,
+    )
+
+    status = {
+        "build_completed": False,
+        "edge_capable": False,
+        "phase_status_reason": "firmware_too_large_for_partition",
+        "incompatibility_reason": "firmware_too_large_for_partition",
+        "build_log": str(log_path),
+    }
+
+    if size_match:
+        status["firmware_bin_size_bytes"] = int(size_match.group(1), 16)
+
+    if part_match:
+        status["partition_name"] = part_match.group(1)
+        status["app_partition_size_bytes"] = int(part_match.group(2), 16)
+        status["app_partition_overflow_bytes"] = int(part_match.group(3), 16)
+
+    return status
+
+
+def write_build_status(path: Path, status: dict):
+    path.write_text(yaml.safe_dump(status, sort_keys=False))
+
+
+def iter_build_input_files(esp_project_dir: Path, variant_dir: Path):
+    candidates = [
+        esp_project_dir / "CMakeLists.txt",
+        esp_project_dir / "sdkconfig.defaults",
+        esp_project_dir / "partitions.csv",
+        variant_dir / "07_edge_run_config.yaml",
+        variant_dir / "07_input_dataset.csv",
+    ]
+    for path in candidates:
+        if path.exists() and path.is_file():
+            yield path
+
+    for dirname in ["main", "build_generated", "data"]:
+        root = esp_project_dir / dirname
+        if not root.exists():
+            continue
+        for path in sorted(p for p in root.rglob("*") if p.is_file()):
+            yield path
+
+
+def compute_build_inputs_fingerprint(esp_project_dir: Path, variant_dir: Path) -> str:
+    digest = hashlib.sha256()
+    for path in iter_build_input_files(esp_project_dir, variant_dir):
+        rel = path.relative_to(esp_project_dir) if path.is_relative_to(esp_project_dir) else path.name
+        digest.update(str(rel).replace("\\", "/").encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def build_outputs_exist(esp_project_dir: Path) -> bool:
+    build_dir = esp_project_dir / "build"
+    flasher_args = build_dir / "flasher_args.json"
+    if not flasher_args.exists():
+        return False
+
+    app_bins = [
+        path for path in build_dir.glob("*.bin")
+        if path.name not in {"bootloader.bin", "partition-table.bin"}
+    ]
+    if not app_bins:
+        return False
+
+    try:
+        json.loads(flasher_args.read_text())
+    except Exception:
+        return False
+
+    return True
+
+
+def can_reuse_build(esp_project_dir: Path, variant_dir: Path) -> bool:
+    if os.environ.get("F07_FORCE_REBUILD", "").strip().lower() in {"1", "true", "yes"}:
+        return False
+
+    stamp_path = esp_project_dir / "build" / BUILD_INPUTS_STAMP
+    if not stamp_path.exists() or not build_outputs_exist(esp_project_dir):
+        return False
+
+    current = compute_build_inputs_fingerprint(esp_project_dir, variant_dir)
+    previous = stamp_path.read_text().strip()
+    return bool(previous) and previous == current
+
+
+def write_build_stamp(esp_project_dir: Path, variant_dir: Path):
+    build_dir = esp_project_dir / "build"
+    build_dir.mkdir(parents=True, exist_ok=True)
+    stamp_path = build_dir / BUILD_INPUTS_STAMP
+    stamp_path.write_text(compute_build_inputs_fingerprint(esp_project_dir, variant_dir))
+
+
 def looks_like_connection_failure(log_path: Path, extra_text: str = "") -> bool:
     text = f"{_tail_text(log_path)}\n{extra_text}".lower()
     patterns = (
@@ -163,16 +278,21 @@ def looks_like_connection_failure(log_path: Path, extra_text: str = "") -> bool:
 
 def get_host_user_spec() -> str:
     """Devuelve UID:GID del proceso host para ejecutar Docker sin root."""
-    return f"{os.getuid()}:{os.getgid()}"
+    return f"{get_host_uid()}:{get_host_gid()}"
+
 
 def get_host_uid() -> str:
-    """Devuelve UID del proceso host para restaurar ownership del volumen."""
-    return str(os.getuid())
+    getuid = getattr(os, "getuid", None)
+    if getuid is None:
+        return os.environ.get("HOST_UID", "0")
+    return str(getuid())
 
 
 def get_host_gid() -> str:
-    """Devuelve GID del proceso host para restaurar ownership del volumen."""
-    return str(os.getgid())
+    getgid = getattr(os, "getgid", None)
+    if getgid is None:
+        return os.environ.get("HOST_GID", "0")
+    return str(getgid())
 
 
 def get_serial_device_gid(port: str | None) -> str | None:
@@ -183,6 +303,7 @@ def get_serial_device_gid(port: str | None) -> str | None:
         return str(os.stat(port).st_gid)
     except OSError:
         return None
+
 
 def build_idf_command(
     idf_args: list[str],
@@ -200,14 +321,18 @@ def build_idf_command(
     generados en /project al usuario del runner.
     """
     quoted_args = " ".join(shlex.quote(arg) for arg in idf_args)
-
     parallel_prefix = ""
     if cmake_parallel_level is not None:
         level = shlex.quote(str(cmake_parallel_level))
         parallel_prefix = f"export CMAKE_BUILD_PARALLEL_LEVEL={level} && "
 
-    # Rutas generadas por ESP-IDF que pueden quedar como root en el volumen.
-    # Incluyo /project/build y ficheros típicos modificados por idf.py.
+    if use_native_idf():
+        idf_cmd = (
+            "source /opt/esp/idf/export.sh >/dev/null && "
+            f"{parallel_prefix}idf.py {quoted_args}"
+        )
+        return ["/bin/bash", "-lc", idf_cmd]
+
     fix_owner_cmd = (
         'chown -R "$HOST_UID:$HOST_GID" '
         '/project/build '
@@ -219,14 +344,10 @@ def build_idf_command(
     )
 
     idf_cmd = (
-        "source /opt/esp/idf/export.sh >/dev/null 2>&1 && "
+        "source /opt/esp/idf/export.sh >/dev/null && "
         f"{parallel_prefix}idf.py {quoted_args}"
     )
 
-    # Importante:
-    # - Capturamos rc para no ocultar errores reales de idf.py.
-    # - Ejecutamos chown aunque idf.py falle.
-    # - Salimos con el mismo rc original.
     shell_cmd = (
         f"{idf_cmd}; "
         "rc=$?; "
@@ -278,7 +399,7 @@ def run_idf_and_log(
         docker_memory_swap=docker_memory_swap,
         docker_cpus=docker_cpus,
     )
-    run_and_log(cmd, log_path, cwd=None)
+    run_and_log(cmd, log_path, cwd=esp_project_dir if use_native_idf() else None)
 
 
 def can_map_docker_device(port: str, image_name: str) -> tuple[bool, str]:
@@ -302,6 +423,7 @@ def can_map_docker_device(port: str, image_name: str) -> tuple[bool, str]:
 
     stderr = (probe.stderr or "").strip()
     return False, stderr
+
 
 def run_host_esptool_flash(port: str, esp_project_dir: Path, flash_log: Path) -> bool:
     build_dir = esp_project_dir / "build"
@@ -420,6 +542,9 @@ def flash_portable(
 
 
 def resolve_docker_memory_limit() -> str | None:
+    if use_native_idf():
+        return None
+
     """Devuelve límite de memoria Docker. Prioridad: env var > constante > máximo disponible."""
     env_value = os.environ.get("F07_DOCKER_MEMORY")
     if env_value:
@@ -427,12 +552,15 @@ def resolve_docker_memory_limit() -> str | None:
     if DOCKER_MEMORY_LIMIT is not None:
         return DOCKER_MEMORY_LIMIT
 
-    probe = subprocess.run(
-        ["docker", "info", "--format", "{{.MemTotal}}"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        probe = subprocess.run(
+            ["docker", "info", "--format", "{{.MemTotal}}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except (FileNotFoundError, PermissionError):
+        return None
 
     if probe.returncode != 0:
         return None
@@ -445,15 +573,22 @@ def resolve_docker_memory_limit() -> str | None:
 
 
 def resolve_docker_memory_swap() -> str | None:
+    if use_native_idf():
+        return None
     return os.environ.get("F07_DOCKER_MEMORY_SWAP")
 
 
 def resolve_docker_cpus() -> str | None:
+    if use_native_idf():
+        return None
     return os.environ.get("F07_DOCKER_CPUS")
 
 
 def ensure_docker_image_exists(image_name: str):
     """Valida que la imagen Docker requerida existe localmente."""
+    if use_native_idf():
+        return
+
     probe = subprocess.run(
         ["docker", "image", "inspect", image_name],
         stdout=subprocess.DEVNULL,
@@ -768,10 +903,18 @@ def serial_send_and_monitor(
     log_path: Path,
     tunit_ms: float | None,
     post_wait_s: float,
+    max_lines: int | None = None,
 ):
     period = (tunit_ms or 1000.0) / 1000.0
 
     lines = load_lines_for_serial(input_file)
+    total_lines = len(lines)
+    if max_lines is not None:
+        max_lines = int(max_lines)
+        if max_lines < 1:
+            raise RuntimeError("[F07-serial] serial.max_lines debe ser >= 1")
+        if total_lines > max_lines:
+            lines = lines[:max_lines]
     if not lines:
         print("[F07-serial] No hay datos para enviar.")
         return
@@ -780,19 +923,11 @@ def serial_send_and_monitor(
     print(f"[F07-serial] Baud: {baud}")
     print(f"[F07-serial] Periodo envío: {period:.3f}s")
     print(f"[F07-serial] Líneas a enviar: {len(lines)}")
+    if max_lines is not None and total_lines > len(lines):
+        print(f"[F07-serial] Limite max_lines: {max_lines}")
+        print(f"[F07-serial] Lineas disponibles: {total_lines}")
     print(f"[F07-serial] Drenado final: {post_wait_s:.2f}s")
     print("[F07-serial] Progreso: '*' cada 100 líneas enviadas (10 '*' por línea)")
-
-    if not Path(port).exists():
-        raise RuntimeError(
-            f"[F07-serial] El puerto serie no existe: {port}\n"
-            "[F07-serial] Si usas ESP32 virtual, arranca primero socat+QEMU:\n"
-            "  make esp32-virt-start VARIANT=<variant>\n"
-            "[F07-serial] Diagnóstico:\n"
-            "  ls -l /dev/ttyVUSB0\n"
-            "  cat /tmp/esp32-virt/socat.log\n"
-            "  cat /tmp/esp32-virt/qemu.log"
-        )
 
     ser = serial.Serial(port, baud, timeout=0)
 
@@ -926,8 +1061,8 @@ def main():
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--drain-seconds", type=float, default=None)
     parser.add_argument("--build-only", action="store_true")
-    parser.add_argument("--no-clean-build", action="store_true")
     parser.add_argument("--skip-flash", action="store_true", help="Omite el flasheo mediante esptool (requerido para QEMU)")
+    parser.add_argument("--no-clean-build", action="store_true")
     args = parser.parse_args()
 
     try:
@@ -949,12 +1084,18 @@ def main():
 
         geom = edge_cfg.get("geometry", {})
         drain_cfg = edge_cfg.get("drain", {})
+        serial_cfg = edge_cfg.get("serial", {})
 
         OW = geom.get("OW", 0)
         LT = geom.get("LT", 0)
         mti_ms, legacy_mti = resolve_max_mti_ms(edge_cfg)
         tu_ms = resolve_tu_ms(edge_cfg)
         recommended = drain_cfg.get("recommended_drain_seconds") if isinstance(drain_cfg, dict) else None
+        serial_max_lines = (
+            serial_cfg.get("max_lines")
+            if isinstance(serial_cfg, dict)
+            else None
+        )
 
         tunit_s = float(tu_ms) / 1000.0 if tu_ms else 1.0
 
@@ -1044,36 +1185,60 @@ def main():
             docker_cpus = resolve_docker_cpus()
         else:
             print("\n=== BUILD ===")
-            if not args.no_clean_build:
-                build_dir = esp_project_dir / "build"
-                if build_dir.exists():
-                    shutil.rmtree(build_dir)
-                    print(f"[F07] build limpio: {build_dir}")
-
             sync_generated_sources_for_build(esp_project_dir)
             sanitize_sdkconfig_for_docker(esp_project_dir)
-            ensure_docker_image_exists(IDF_DOCKER_IMAGE)
+
             docker_memory_limit = resolve_docker_memory_limit()
             docker_memory_swap = resolve_docker_memory_swap()
             docker_cpus = resolve_docker_cpus()
 
-            if docker_memory_limit:
-                print(f"[F07] Docker memory limit por defecto: {docker_memory_limit}")
-            if docker_memory_swap:
-                print(f"[F07] Docker memory-swap: {docker_memory_swap}")
-            if docker_cpus:
-                print(f"[F07] Docker cpus: {docker_cpus}")
+            if can_reuse_build(esp_project_dir, variant_dir):
+                print("[F07] Build reutilizado: inputs sin cambios y binarios existentes.")
+            else:
+                if not args.no_clean_build:
+                    build_dir = esp_project_dir / "build"
+                    if build_dir.exists():
+                        shutil.rmtree(build_dir)
+                        print(f"[F07] build limpio: {build_dir}")
 
-            build_jobs = os.environ.get("F07_DOCKER_BUILD_JOBS", "1")
-            run_idf_and_log(
-                ["build"],
-                build_log,
-                esp_project_dir=esp_project_dir,
-                cmake_parallel_level=build_jobs,
-                docker_memory_limit=docker_memory_limit,
-                docker_memory_swap=docker_memory_swap,
-                docker_cpus=docker_cpus,
-            )
+                sync_generated_sources_for_build(esp_project_dir)
+                sanitize_sdkconfig_for_docker(esp_project_dir)
+                ensure_docker_image_exists(IDF_DOCKER_IMAGE)
+
+                if docker_memory_limit:
+                    print(f"[F07] Docker memory limit por defecto: {docker_memory_limit}")
+                if docker_memory_swap:
+                    print(f"[F07] Docker memory-swap: {docker_memory_swap}")
+                if docker_cpus:
+                    print(f"[F07] Docker cpus: {docker_cpus}")
+
+                build_jobs = os.environ.get("F07_DOCKER_BUILD_JOBS", "1")
+                try:
+                    run_idf_and_log(
+                        ["build"],
+                        build_log,
+                        esp_project_dir=esp_project_dir,
+                        cmake_parallel_level=build_jobs,
+                        docker_memory_limit=docker_memory_limit,
+                        docker_memory_swap=docker_memory_swap,
+                        docker_cpus=docker_cpus,
+                    )
+                    write_build_stamp(esp_project_dir, variant_dir)
+                except RuntimeError:
+                    status = detect_partition_too_small(build_log)
+                    if status is not None:
+                        flasher_args = esp_project_dir / "build" / "flasher_args.json"
+                        if flasher_args.exists():
+                            try:
+                                flash_cfg = yaml.safe_load(flasher_args.read_text()) or {}
+                                status["configured_flash_size"] = (
+                                    flash_cfg.get("flash_settings", {}) or {}
+                                ).get("flash_size")
+                            except Exception:
+                                pass
+                        write_build_status(variant_dir / "07_build_status.yaml", status)
+                        print("[F07] Build no desplegable: firmware_too_large_for_partition")
+                    raise
 
         if args.build_only:
             print("\n[F07] Build-only completado con éxito.")
@@ -1108,6 +1273,7 @@ def main():
                 log_path=monitor_log,
                 tunit_ms=tu_ms,
                 post_wait_s=post_wait_s,
+                max_lines=serial_max_lines,
             )
         else:
             serial_monitor_only(

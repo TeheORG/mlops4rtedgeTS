@@ -1,27 +1,82 @@
-# MLOps4RT-Edge
+﻿# MLOps4RT-Edge
 
-Pipeline reproducible por fases para entrenar y validar modelos de series temporales orientados a edge.
+Pipeline MLOps por fases para llevar una serie temporal numerica hasta modelos cuantizados y validacion en plataforma edge.
 
-La forma normal de uso es siempre la misma:
+Este repositorio contiene codigo, automatizacion, schemas y templates. Los datasets, modelos, logs, builds ESP-IDF, caches DVC y estado de ejecuciones son artefactos locales y viven bajo `executions/`.
 
-```bash
-make variantN ...
-make scriptN VARIANT=vN_XXXX
-make checkN VARIANT=vN_XXXX
-make registerN VARIANT=vN_XXXX
+## Que Hace
+
+El flujo completo tiene ocho fases:
+
+| Fase | Nombre | Objetivo | Entrada principal | Salida principal |
+| --- | --- | --- | --- | --- |
+| F01 | `f01_explore` | Explorar y limpiar el dataset bruto | CSV/raw | dataset limpio parquet |
+| F02 | `f02_events` | Seleccionar una medida y construir serie univariable | F01 | `02_series.parquet` |
+| F03 | `f03_windows` | Crear ventanas temporales numericas | F02 | `03_windows.parquet` con `OW_values`/`PW_values` |
+| F04 | `f04_targets` | Etiquetar ventanas por umbral o transicion | F03 | `04_targets.parquet` con `OW_values`/`label` |
+| F05 | `f05_modeling` | Entrenar modelos sobre secuencias numericas | F04 | modelo Keras y metricas |
+| F06 | `f06_quant` | Cuantizar y empaquetar para edge | F05 | `.tflite`, manifest y reporte |
+| F07 | `f07_modval` | Validar un modelo en edge | F06 | runtime metrics y perfil del modelo |
+| F08 | `f08_sysval` | Validar una configuracion multi-modelo | F07 | seleccion, firmware y metricas de sistema |
+
+Cada fase trabaja con variantes. Una variante se guarda en:
+
+```text
+executions/<fase>/<variante>/
 ```
 
-Cada fase crea una variante en `executions/<fase>/<variant>/` con `params.yaml`, artefactos, reportes y `outputs.yaml`.
+Cada variante contiene como minimo:
 
-## Setup
+- `params.yaml`: parametros efectivos de la variante.
+- `metadata.yaml`: estado de ciclo de vida.
+- `outputs.yaml`: artefactos, exports y metricas de la fase.
 
-Requisitos minimos:
+El contrato de parametros, artefactos, exports y metricas esta declarado en `scripts/traceability_schema.yaml`.
+
+## Idea Principal Del Repositorio
+
+El flujo principal ya no usa catalogos ni IDs de eventos. Trabaja con una sola medida numerica:
+
+```text
+F02: value
+F03: OW_values, PW_values
+F04: OW_values, label
+F05: secuencia numerica normalizada
+F06: modelo TFLite INT8
+F07/F08: entrada int8 cuantizada en edge
+```
+
+La entrada real del modelo cuantizado en edge es `int8`. Para reproducirla, F07 y F08 aplican la misma receta guardada por F06:
+
+```text
+OW_values raw
+-> padding/truncado a input_max_len
+-> normalizacion: (x - normalization_mean) / normalization_std
+-> cuantizacion TFLite: round(normalized / input_quant_scale + input_quant_zero_point)
+-> int8
+-> tensor del modelo
+```
+
+Todavia hay nombres legacy en el firmware ESP32 como `event_t`, `memory_events.h` o `events_mgr`, pero en este repositorio ya no representan eventos de dominio. Son buffers de entrada temporal reutilizados por la plantilla edge.
+
+## Requisitos
+
+Minimos:
 
 - Python 3.11
 - GNU Make
 - Git
 
-Configuracion local:
+Recomendados:
+
+- Docker, necesario para F05/F06 y para el runner ESP32 virtual reproducible.
+- DVC, si se registran o descargan artefactos pesados.
+- MLflow, si se quiere tracking de entrenamientos.
+- ESP-IDF/placa ESP32 solo si se ejecuta fuera del runner Docker.
+
+En Windows se recomienda ejecutar `make` desde Git Bash o desde el entorno que ya use el proyecto.
+
+## Setup
 
 ```bash
 make setup SETUP_CFG=setup/local.yaml
@@ -34,41 +89,41 @@ Ayuda general:
 make help
 ```
 
-Limpiar entorno local generado:
+Ayuda por fase:
+
+```bash
+make help1
+make help2
+make help3
+make help4
+make help5
+make help6
+make help7
+make help8
+```
+
+Limpiar setup local:
 
 ```bash
 make clean-setup
 ```
 
-## Flujo Principal
+## Patron De Uso
 
-El flujo actual F01-F04 trabaja con una serie temporal univariable:
+Para cada fase:
 
-1. F01 explora y limpia el dataset bruto.
-2. F02 selecciona una medida y genera `02_series.parquet`.
-3. F03 construye ventanas `OW_values` y `PW_values`.
-4. F04 etiqueta cada ventana usando un umbral sobre los valores de prediccion o, si se trabaja con eventos binarios, una regla de transicion.
-
-El umbral de F04 es un porcentaje entre el minimo y el maximo de la medida exportados por F02:
-
-```text
-threshold_value = min + (threshold / 100) * (max - min)
+```bash
+make variantN ...
+make scriptN VARIANT=vN_XXXX
+make checkN VARIANT=vN_XXXX
+make registerN VARIANT=vN_XXXX
 ```
 
-Con `DIRECTION=high`, la etiqueta es 1 si algun valor de `PW_values` supera el umbral.  
-Con `DIRECTION=low`, la etiqueta es 1 si algun valor de `PW_values` queda por debajo del umbral.
+Los IDs cortos tambien se aceptan y se normalizan por fase. Por ejemplo, `VARIANT=0` puede convertirse en `v7_0000` cuando se usa con F07.
 
-Cuando `EVENT_STRATEGY=transitions`, F04 no recalcula umbrales sobre eventos ya binarios. La etiqueta vale 1 solo si el ultimo evento de la ventana de observacion es 0 y en la ventana de prediccion aparece al menos un 1:
+## Ejecucion Completa Por Fases
 
-```text
-label = last(OW_events) == 0 AND any(PW_events == 1)
-```
-
-Las ventanas vacias se etiquetan como 0.
-
-## Ejemplo F01-F04
-
-### F01: explorar datos
+### F01: explorar y limpiar datos
 
 ```bash
 make variant1 VARIANT=v1_0000 RAW=data/raw.csv CLEANING=basic NAN_VALUES='[-999999]'
@@ -77,9 +132,17 @@ make check1 VARIANT=v1_0000
 make register1 VARIANT=v1_0000
 ```
 
-Opcionales habituales: `ERROR_VALUES`, `FIRST_LINE`, `MAX_LINES`.
+Parametros principales:
 
-### F02: crear serie univariable
+- `RAW`: ruta al dataset bruto.
+- `CLEANING`: `none`, `basic` o `strict`.
+- `NAN_VALUES`: lista opcional de valores tratados como NaN.
+- `ERROR_VALUES`: diccionario opcional por columna.
+- `FIRST_LINE`, `MAX_LINES`: recorte opcional de lectura.
+
+Salidas principales: dataset limpio parquet, reporte HTML y exports `Tu`, `n_rows`, `n_columns`, `measure_cols`.
+
+### F02: construir serie temporal univariable
 
 ```bash
 make variant2 VARIANT=v2_0000 PARENT=v1_0000 MEASURE=Battery_Active_Power
@@ -88,16 +151,27 @@ make check2 VARIANT=v2_0000
 make register2 VARIANT=v2_0000
 ```
 
-Salida principal:
+F02 valida que `MEASURE` exista entre las `measure_cols` exportadas por F01.
+
+Parametros principales:
+
+- `PARENT`: variante F01.
+- `MEASURE`: columna numerica elegida.
+- `TU`: opcional; si no se redefine, se hereda.
+- `min_std_for_measure_compatibility`: umbral interno opcional para declarar incompatible una medida casi constante.
+
+Salidas principales:
 
 - `02_series.parquet`
 - `02_series_stats.json`
 - `02_series_report.html`
 
-### F03: crear ventanas
+Si la medida no es compatible, F02 conserva `outputs.yaml` y el reporte, pero no publica la serie como artefacto util.
+
+### F03: crear ventanas numericas
 
 ```bash
-make variant3 VARIANT=v3_0000 PARENT=v2_0000 OW=600 LT=10 PW=10 STRATEGY=synchro NAN_MODE=discard
+make variant3 VARIANT=v3_0000 PARENT=v2_0000 OW=90 LT=10 PW=10 STRATEGY=synchro NAN_MODE=discard
 make script3 VARIANT=v3_0000
 make check3 VARIANT=v3_0000
 make register3 VARIANT=v3_0000
@@ -105,18 +179,20 @@ make register3 VARIANT=v3_0000
 
 Parametros:
 
-- `OW`: longitud de la ventana de observacion, en multiplos de `Tu`
-- `LT`: lead time entre observacion y prediccion
-- `PW`: longitud de la ventana de prediccion
-- `STRATEGY`: `synchro` o `asynOW`
-- `NAN_MODE`: `keep` o `discard`
+- `OW`: longitud de la ventana de observacion, en multiplos de `Tu`.
+- `LT`: lead time entre observacion y prediccion.
+- `PW`: longitud de la ventana de prediccion.
+- `STRATEGY`: `synchro` o `asynOW`.
+- `NAN_MODE`: `keep` o `discard`.
 
 Salida principal:
 
-- `03_windows.parquet`, con `OW_values` y `PW_values`
-- `03_windows_report.html`
+- `03_windows.parquet`, con `OW_values` y `PW_values`.
+- `03_windows_report.html`.
 
 ### F04: crear etiquetas
+
+F04 etiqueta ventanas numericas por umbral:
 
 ```bash
 make variant4 VARIANT=v4_0000 PARENT=v3_0000 THRESHOLD=80 DIRECTION=high NAME=battery_high_80
@@ -125,37 +201,79 @@ make check4 VARIANT=v4_0000
 make register4 VARIANT=v4_0000
 ```
 
-Para eventos binarios por transicion:
+El umbral se interpreta como porcentaje entre el minimo y maximo de la medida exportados por F02:
+
+```text
+threshold_value = min + (threshold / 100) * (max - min)
+```
+
+Con `DIRECTION=high`, la etiqueta vale 1 si algun valor de `PW_values` supera el umbral. Con `DIRECTION=low`, vale 1 si algun valor de `PW_values` cae por debajo.
+
+F04 tambien conserva modo de transicion para entradas binarias:
 
 ```bash
-make variant4 VARIANT=v4_0000 PARENT=v3_0000 EVENT_STRATEGY=transitions NAME=event_transition_0_to_1
-make script4 VARIANT=v4_0000
+make variant4 VARIANT=v4_0001 PARENT=v3_0000 EVENT_STRATEGY=transitions NAME=event_transition_0_to_1
+make script4 VARIANT=v4_0001
+```
+
+En modo `transitions`:
+
+```text
+label = last(OW_events) == 0 AND any(PW_events == 1)
 ```
 
 Parametros:
 
-- `EVENT_STRATEGY`: `threshold` por defecto, o `transitions` para eventos binarios
-- `THRESHOLD`: porcentaje entre 0 y 100 del rango min-max de F02
-- `DIRECTION`: `high` o `low`
-- `NAME`: nombre opcional del objetivo
+- `EVENT_STRATEGY`: `threshold` por defecto, o `transitions`.
+- `THRESHOLD`: porcentaje de rango, requerido en modo `threshold`.
+- `DIRECTION`: `high` o `low`.
+- `NAME`: nombre del objetivo, guardado como `prediction_name`.
+- `min_positive_ratio_for_target_compatibility`: minimo opcional de positivos.
 
 Salida principal:
 
-- `04_targets.parquet`, con `OW_values` y `label`
-- `04_targets_report.html`
+- `04_targets.parquet`, con `OW_values` y `label` en el flujo numerico.
+- `04_targets_report.html`.
 
-## Fases Posteriores
+### F05: entrenar modelos
 
-Las fases F05-F08 usan el dataset etiquetado de F04:
+```bash
+make variant5 VARIANT=v5_0000 PARENT=v4_0000 MODEL_FAMILY=cnn1d IMBALANCE_STRATEGY=rare_events IMBALANCE_MAX_MAJ=20000
+make script5 VARIANT=v5_0000
+make check5 VARIANT=v5_0000
+make register5 VARIANT=v5_0000
+```
 
-- F05 entrena modelos.
-- F06 cuantiza y empaqueta modelos.
-- F07 valida un modelo en hardware edge.
-- F08 valida una configuracion multi-modelo.
+Modelos soportados:
 
-### Ejemplo F06: cuantizar y empaquetar
+- `cnn1d`
+- `dense_bow`
 
-F06 parte de una variante entrenada en F05 y genera el modelo preparado para edge, incluyendo el `.tflite`, el reporte de cuantizacion y los metadatos de despliegue.
+F05 lee `OW_values` y `label`, calcula `input_max_len`, normaliza la serie con media/desviacion de train y entrena el modelo. Para `cnn1d`, la entrada tiene forma:
+
+```text
+[muestras, input_max_len, 1]
+```
+
+Parametros importantes:
+
+- `MODEL_FAMILY`: familia de modelo.
+- `AUTOML`: configuracion opcional de busqueda.
+- `TRAINING`: configuracion opcional de entrenamiento.
+- `DEDUPLICATION_MODE`: `none`, `auto`, `neg_only` o `all`.
+- `SEED`: semilla opcional.
+- `IMBALANCE_STRATEGY`: `none`, `rare_events` o `auto`.
+- `IMBALANCE_MAX_MAJ`: maximo opcional de negativos/majority.
+
+F05 corre en Docker. Para GPU:
+
+```bash
+make script5 VARIANT=v5_0000 F56_GPU=true
+```
+
+Salidas principales: modelo `.h5`, dataset etiquetado autocontenido, reporte HTML, historial y exports de calidad (`decision_threshold`, `test_precision`, `test_recall`, `test_f1`, `best_val_recall`).
+
+### F06: cuantizar y empaquetar
 
 ```bash
 make variant6 VARIANT=v6_0000 PARENT=v5_0000 DEPLOY_TARGET=esp32 REQUIRE_INT8=true
@@ -164,45 +282,232 @@ make check6 VARIANT=v6_0000
 make register6 VARIANT=v6_0000
 ```
 
-Opcionales habituales:
+Parametros principales:
 
-- `DEPLOY_TARGET`: plataforma objetivo, por ejemplo `esp32`.
-- `DEPLOY_RUNTIME`: runtime de despliegue, por ejemplo `esp-tflite-micro`.
+- `DEPLOY_TARGET`: plataforma objetivo, normalmente `esp32`.
+- `DEPLOY_RUNTIME`: runtime, normalmente `esp-tflite-micro`.
 - `DEPLOY_VERSION`: version del runtime.
-- `REQUIRE_INT8`: exige que el modelo final sea INT8.
-- `MEMORY_LIMIT`: limite de memoria objetivo en bytes.
-- `QUANTIZATION`: configuracion avanzada de cuantizacion.
-- `THRESHOLDING`: configuracion avanzada para recalibrar el umbral.
+- `REQUIRE_INT8`: exige contrato INT8.
+- `MEMORY_LIMIT`: limite de memoria objetivo.
+- `QUANTIZATION`: configuracion avanzada.
+- `THRESHOLDING`: recalibracion opcional del umbral.
 
-Salida principal:
+F06 reconstruye la entrada numerica esperada por el modelo, genera dataset representativo, convierte a TFLite INT8 e inspecciona operadores y firma.
+
+Salidas principales:
 
 - `06_model_float.h5`
 - `06_model_tflite.tflite`
 - `06_calibration_dataset.parquet`
+- `06_test_dataset.parquet`
 - `06_quant_report.html`
 - `eedu/eedu_manifest.yaml`
 
-Consulta la ayuda especifica cuando las uses:
+Exports importantes para edge:
+
+- `input_dtype: int8`
+- `output_dtype: int8`
+- `input_shape`, `output_shape`
+- `input_bytes`, `output_bytes`
+- `input_max_len`
+- `normalization_mean`
+- `normalization_std`
+- `input_quant_scale`
+- `input_quant_zero_point`
+- `operators`
+- `arena_estimated_bytes`
+- `model_size_bytes`
+
+Para GPU:
 
 ```bash
-make help5
-make help6
-make help7
-make help8
+make script6 VARIANT=v6_0000 F56_GPU=true
 ```
 
-## Comandos Utiles
+### F07: validar un modelo en edge
 
-Eliminar una variante, si no tiene hijas:
+ESP32 virtual:
 
 ```bash
-make remove4 VARIANT=v4_0000
+make variant7 VARIANT=v7_0000 PARENT=v6_0000 PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01 VIRTUAL=true MAX_ROWS=1000 ESP_FLASH_MB=4
+make script7 VARIANT=v7_0000
+make check7 VARIANT=v7_0000
+make register7 VARIANT=v7_0000
 ```
 
-Eliminar todas las variantes de una fase de forma segura:
+Placa fisica:
 
 ```bash
-make remove-phase-all PHASE=f04_targets VARIANTS_DIR=executions/f04_targets
+make variant7 VARIANT=v7_0001 PARENT=v6_0000 PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01 VIRTUAL=false MAX_ROWS=1000 ESP_FLASH_MB=4
+make script7 VARIANT=v7_0001 PORT=/dev/ttyUSB0 BAUD=115200
+make check7 VARIANT=v7_0001
+make register7 VARIANT=v7_0001
+```
+
+Ejecucion por pasos:
+
+```bash
+make script7-prepare-build VARIANT=v7_0000
+make script7-build-only VARIANT=v7_0000
+make script7-flash-run VARIANT=v7_0000
+make script7-post VARIANT=v7_0000
+```
+
+Parametros principales:
+
+- `PARENT`: variante F06.
+- `PLATFORM`: carpeta bajo `edge/`, por ejemplo `esp32`.
+- `MTI_MS`: presupuesto temporal de inferencia en milisegundos.
+- `ITMAX`: opcional; por defecto `MTI_MS`.
+- `TIME_SCALE`: escala temporal para replay en edge. Por defecto `0.01`.
+- `MAX_ROWS`: limita filas incluidas en el dataset generado y en el firmware.
+- `MAX_LINES`: limita lineas enviadas por serial sin recortar el CSV generado.
+- `VIRTUAL`: `true` para usar Docker/QEMU/socat.
+- `ESP_FLASH_MB`: flash ESP32 declarada, por ejemplo `4`, `8`, `16`.
+
+En F07, `memory_events.h` contiene entradas int8 ya cuantizadas. No contiene IDs de eventos. Si `MAX_ROWS=10000` y `OW=90`, se embeben aproximadamente 900 KB solo de dataset, asi que puede ser necesario usar `ESP_FLASH_MB=4` o bajar `MAX_ROWS`.
+
+Artefactos principales:
+
+- `07_edge_run_config.yaml`
+- `07_model_profile.yaml`
+- `07_input_dataset.csv`
+- `07_evaluation_dataset.csv`
+- `07_esp_build_log.txt`
+- `07_esp_flash_log.txt`
+- `07_esp_monitor_log.txt`
+- `metrics_models.csv`
+- `metrics_memory.csv`
+- `metrics_system_timing.csv`
+- `07_report.html`
+
+### F08: validar una configuracion multi-modelo
+
+Manual:
+
+```bash
+make variant8 VARIANT=v8_0000 PARENTS=v7_0000,v7_0001 PLATFORM=esp32 MTI_MS=100 SELECTION_MODE=manual VIRTUAL=true MAX_ROWS=1000
+make script8 VARIANT=v8_0000
+make check8 VARIANT=v8_0000
+make register8 VARIANT=v8_0000
+```
+
+Seleccion automatica por ILP:
+
+```bash
+make variant8 VARIANT=v8_0001 PARENTS=v7_0000,v7_0001,v7_0002 PLATFORM=esp32 MTI_MS=100 SELECTION_MODE=auto_ilp OBJECTIVE=max_tp MIN_PRECISION=0.01 MAX_MODELS=2 VIRTUAL=true MAX_ROWS=1000
+make script8 VARIANT=v8_0001
+```
+
+Parametros principales:
+
+- `PARENTS`: lista de variantes F07.
+- `SELECTION_MODE`: `manual` o `auto_ilp`.
+- `OBJECTIVE`: `max_global_recall`, `global_recall`, `recall_global` o `max_tp`.
+- `SOLVER_TIME_LIMIT_SEC`: limite para ILP.
+- `MTI_MS`: presupuesto global.
+- `MAX_ROWS`: filas usadas para dataset unico de ventanas.
+- `MEMORY_BUDGET_BYTES`: presupuesto de memoria.
+- `MAX_MODELS`: maximo de modelos seleccionados.
+- `MIN_QUALITY_SCORE`, `MIN_PRECISION`, `MIN_RECALL`: filtros de seleccion.
+- `VIRTUAL`: ejecucion en ESP32 virtual si aplica.
+
+F08 valida que los modelos seleccionados compartan una firma de entrada compatible: geometria (`Tu`, `OW`, `LT`, `PW`), dtype INT8, shape, bytes, normalizacion y cuantizacion. Esto es importante porque todos los modelos usan el mismo replay de ventanas.
+
+Artefactos principales:
+
+- `08_selected_configuration.yaml`
+- `08_selection_report.yaml`
+- `08_candidate_summary.csv`
+- `08_unique_windows.csv`
+- `08_model_execution_plan.yaml`
+- `08_system_profile.yaml`
+- `08_edge_run_config.yaml`
+- `metrics_models.csv`
+- `metrics_memory.csv`
+- `metrics_system_timing.csv`
+- `metrics_outcomes.csv`
+- `metrics_system_summary.yaml`
+- `08_report.html`
+
+## ESP32 Virtual
+
+Si una variante F07/F08 tiene `VIRTUAL=true`, `make script7` o `make script8` usa el entorno virtual ESP32 basado en Docker, QEMU y `socat`.
+
+Comandos utiles:
+
+```bash
+make esp32-virt-docker-build
+make esp32-virt-verify
+make script7-virtualESP32 VARIANT=v7_0000
+make script8-virtualESP32 VARIANT=v8_0000
+make esp32-virt-stop
+```
+
+El host solo necesita Docker. ESP-IDF, QEMU, `socat` y dependencias Python viven dentro del contenedor.
+
+## ESP32 Fisica
+
+Para placa real:
+
+1. Crear la variante con `VIRTUAL=false`.
+2. Conectar la placa.
+3. Ejecutar con `PORT` y `BAUD` si hace falta.
+4. Revisar logs y metricas de la variante.
+
+Ejemplo:
+
+```bash
+make script7 VARIANT=v7_0001 PORT=/dev/ttyUSB0 BAUD=115200
+```
+
+En Windows el puerto puede ser `COM3`, `COM4`, etc., segun el entorno de shell.
+
+## Registro, DVC Y MLflow
+
+Responsabilidades:
+
+- Git: codigo, documentacion, schemas y templates.
+- DVC: artefactos pesados.
+- MLflow: tracking de entrenamiento si esta habilitado.
+- `executions/`: estado local de variantes.
+
+Registrar una fase:
+
+```bash
+make register5 VARIANT=v5_0000
+```
+
+Traer artefactos registrados:
+
+```bash
+make dvc-pull VARIANT=v5_0000
+```
+
+Traer varios:
+
+```bash
+make dvc-pull VARIANT=v5_0000,v6_0000,v7_0000
+```
+
+Limpiar artefactos descargados:
+
+```bash
+make dvc-clean VARIANT=v5_0000
+```
+
+## Limpieza
+
+Eliminar una variante si no tiene hijas:
+
+```bash
+make remove5 VARIANT=v5_0000
+```
+
+Eliminar todas las variantes de una fase:
+
+```bash
+make remove-phase-all PHASE=f05_modeling VARIANTS_DIR=executions/f05_modeling
 ```
 
 Regenerar el panel de linaje:
@@ -211,158 +516,111 @@ Regenerar el panel de linaje:
 make generate_lineage
 ```
 
-## Donde se Guardan los Resultados
+## Troubleshooting
 
-Los resultados se escriben en `executions/`. Este directorio contiene variantes, artefactos, reportes y metadatos generados por ejecucion.
+### Una fase no encuentra el parent
 
-Los artefactos grandes se registran mediante DVC cuando ejecutas `make registerN`. La configuracion de DVC, MLflow y Git se define durante `make setup`.
-
-## Notas
-
-- Usa variantes canonicas como `v1_0000`, `v2_0000`, etc.
-- Las formas cortas como `VARIANT=0` tambien se normalizan segun la fase.
-- F02 ya no genera catalogos de eventos.
-- F04 conserva el etiquetado numerico por umbral y tambien soporta `OW_events`/`PW_events` binarios con regla de transicion 0->1. Ya no etiqueta positivo por la mera presencia de cualquier evento en `PW_events`.
-
-## Cambios Realizados Desde el Inicio del Repositorio Git
-
-Esta lista resume los cambios hechos respecto al commit inicial del repositorio. El cambio mas importante es que el flujo principal ha pasado de trabajar con eventos discretos a trabajar con una serie temporal numerica de una sola medida.
-
-### F01: exploracion y limpieza
-
-No se han hecho cambios directos en el script de F01.
-
-F01 sigue siendo la fase que lee el dataset bruto, prepara el eje temporal, limpia valores invalidos y exporta las columnas de medida disponibles. Lo que si ha cambiado es que ahora F02 usa de forma mas directa la informacion que F01 exporta: la lista de medidas sirve para validar que la medida elegida en F02 existe realmente en el dataset limpio.
-
-### F02: de dataset de eventos a serie temporal univariable
-
-Este es uno de los cambios principales.
-
-Antes F02 generaba un dataset de eventos. Para ello discretizaba varias medidas en bandas, creaba un catalogo de eventos y producia artefactos como `02_events.parquet` y `02_events_catalog.json`.
-
-Ahora F02 selecciona una sola medida con el parametro `MEASURE` y genera una serie temporal numerica simple:
-
-- `02_series.parquet`
-- `02_series_stats.json`
-- `02_series_report.html`
-
-El dataset resultante contiene la columna temporal y una columna `value`. Esto simplifica mucho el flujo, porque las fases siguientes ya no dependen de codigos de eventos ni de catalogos. Tambien se calculan estadisticas utiles de la serie, como minimo, maximo, media, mediana, desviacion, proporcion de NaN y continuidad temporal.
-
-Tambien se ha cambiado el `Makefile`: ahora `variant2` pide `MEASURE` en lugar de `STRATEGY`, `BANDS` y `NAN_MODE`. Ademas, se valida que la medida exista entre las columnas exportadas por F01.
-
-### F03: ventanas sobre valores numericos
-
-F03 se ha adaptado al nuevo formato de F02.
-
-Antes construia ventanas con listas de eventos:
-
-- `OW_events`
-- `PW_events`
-
-Ahora construye ventanas con valores numericos:
-
-- `OW_values`
-- `PW_values`
-
-La logica de ventanas se mantiene en lo esencial: se siguen usando `OW`, `LT`, `PW`, `STRATEGY` y `NAN_MODE`. La diferencia es que las ventanas ya no contienen IDs de eventos, sino valores reales de la medida seleccionada en F02.
-
-Tambien se ha eliminado la copia del catalogo de eventos en F03, porque ya no existe un catalogo. El chequeo de fase se ha actualizado para no exigir `03_events_catalog.json`.
-
-### F04: etiquetas por umbral numerico
-
-F04 tambien ha cambiado de forma importante.
-
-Antes F04 etiquetaba una ventana buscando si en `PW_events` aparecia alguno de los eventos definidos en `target_event_types`, normalmente usando una regla OR.
-
-Ahora F04 etiqueta cada ventana mirando los valores de `PW_values`. El usuario define:
-
-- `THRESHOLD`: porcentaje entre 0 y 100.
-- `DIRECTION`: `high` o `low`.
-- `NAME`: nombre opcional del objetivo.
-
-El porcentaje se convierte en un valor real usando el minimo y maximo calculados en F02:
+Comprueba que el parent existe y pertenece a la fase esperada:
 
 ```text
-threshold_value = min + (threshold / 100) * (max - min)
+F03 -> parent F02
+F04 -> parent F03
+F05 -> parent F04
+F06 -> parent F05
+F07 -> parent F06
+F08 -> parents F07
 ```
 
-Con `DIRECTION=high`, la etiqueta vale 1 si algun valor de la ventana de prediccion supera el umbral. Con `DIRECTION=low`, vale 1 si algun valor queda por debajo. En `EVENT_STRATEGY=transitions`, la etiqueta vale 1 solo cuando `last(OW_events) == 0` y `any(PW_events == 1)`; si `OW_events` o `PW_events` estan vacias, devuelve 0.
+### F02 dice que `MEASURE` no es valido
 
-Tambien se ha hecho el etiquetado por lotes con PyArrow. Esto evita cargar todo el parquet completo en memoria cuando el dataset es grande. La salida principal sigue siendo `04_targets.parquet`; en modo numerico contiene `OW_values` y `label`, y en modo transiciones conserva `OW_events` y `label`.
-
-### F05: entrenamiento con secuencias numericas
-
-F05 se ha adaptado para entrenar modelos usando `OW_values`.
-
-Antes el entrenamiento trabajaba con secuencias de eventos o bolsas de eventos. Eso necesitaba cosas como `event_type_count`, vocabularios de eventos y modelos pensados para IDs categoricos.
-
-Ahora el entrenamiento trabaja con secuencias numericas continuas. Cada muestra que llega desde F04 tiene:
-
-- `OW_values`: los valores reales de la ventana de observacion.
-- `label`: la etiqueta calculada en F04.
-
-Antes, para `cnn1d`, el flujo era este:
+F02 valida contra `measure_cols` de F01. Revisa:
 
 ```text
-OW_events -> IDs de eventos -> Embedding -> Conv1D -> salida
+executions/f01_explore/<variant>/outputs.yaml
 ```
 
-Es decir, la red no veia la senal original. Veia codigos enteros de eventos. Por eso necesitaba una capa `Embedding`, un vocabulario de eventos y `event_type_count`.
+### F04 produce target incompatible
 
-Ahora, para `cnn1d`, el flujo es este:
+Revisa `positive_ratio` y `min_positive_ratio_for_target_compatibility` en `outputs.yaml`. Puede que el umbral sea demasiado extremo o que la medida no tenga suficientes casos positivos.
+
+### F05/F06 falla en Docker
+
+Comprueba:
+
+- Docker arrancado.
+- espacio en disco.
+- imagen `mlops-f56-gpu` o imagen CPU disponible.
+- `F56_GPU=true` solo si tienes runtime NVIDIA configurado.
+
+### F07 falla con `firmware_too_large_for_partition`
+
+La imagen no cabe en la particion de app. Suele pasar si `MAX_ROWS` es alto, porque el dataset se embebe en el firmware.
+
+Opciones:
+
+```bash
+make variant7 VARIANT=v7_0000 PARENT=v6_0000 PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01 VIRTUAL=true MAX_ROWS=1000
+make variant7 VARIANT=v7_0000 PARENT=v6_0000 PLATFORM=esp32 MTI_MS=100 TIME_SCALE=0.01 VIRTUAL=true MAX_ROWS=10000 ESP_FLASH_MB=4
+```
+
+Mira:
+
+- `07_build_status.yaml`
+- `07_esp_build_log.txt`
+- `07_model_profile.yaml`
+
+### F07/F08 no genera monitor log
+
+Si la build o el flash fallan antes de arrancar, no hay monitor log. F073/F084 exportan outputs parciales para que la causa quede trazada.
+
+Revisa:
+
+- `07_esp_build_log.txt` o `08_esp_build_log.txt`
+- `07_esp_flash_log.txt` o `08_esp_flash_log.txt`
+- `phase_status_reason` en `outputs.yaml`
+
+### Inferencias edge fallan o no cumplen tiempo
+
+Mira:
+
+- `metrics_models.csv`
+- `metrics_outcomes.csv`, si existe.
+- `metrics_system_timing.csv`
+- `07_esp_monitor_log.txt` o `08_esp_monitor_log.txt`
+
+Indicadores comunes:
+
+- `watchdog_rate` alto: inferencias que no terminaron a tiempo.
+- `offload_rate` alto: fallback/offload.
+- `edge_run_completed=false`: ejecucion incompleta.
+- `phase_status_reason`: razon canonica de estado.
+
+## Estructura Del Repositorio
 
 ```text
-OW_values -> secuencia numerica normalizada -> Conv1D -> salida
+scripts/core/              logica comun
+scripts/phases/            fases F01-F08
+scripts/runtime_analysis/  parser y metricas runtime
+scripts/esp32_virtual/     runner Docker/QEMU para ESP32 virtual
+edge/                      templates y runtime edge
+setup/                     configuracion local/remota
+test/                      auditorias y experimentos
+executions/                salidas locales generadas
 ```
 
-La red recibe directamente la forma de la serie temporal. Por ejemplo, si la medida elegida en F02 es `Battery_Active_Power`, la CNN trabaja con la evolucion numerica de esa potencia dentro de la ventana de observacion.
+## Para Desarrolladores
 
-El preprocesado nuevo de F05 hace estos pasos:
-
-1. Lee solo `OW_values` y `label` del parquet de F04.
-2. Convierte cada `OW_values` en una secuencia de numeros `float32`.
-3. Calcula una longitud comun `max_len` usando el percentil 95 de las longitudes.
-4. Rellena con ceros o recorta las secuencias para que todas tengan esa longitud.
-5. Normaliza los valores con media y desviacion tipica. (el modelo aprende mejor si la entrada tiene una escala estable y los valores que podemos tener son muy dispersos (-216.8, 0.4, 15.2, 119.9, ...) (valor_normalizado = (valor - media) / desviacion_tipica))
-6. Si el modelo es `cnn1d`, convierte la entrada a forma `[muestras, max_len, 1]`.
-
-Ese ultimo `1` significa que hay un solo canal de entrada, porque el flujo actual usa una serie univariable. Es el formato que espera una `Conv1D` para aprender patrones locales en una senal temporal.
-
-El modelo `cnn1d` tambien se ha simplificado. Antes empezaba con una capa `Embedding`; ahora empieza directamente con una entrada numerica:
+Lee tambien:
 
 ```text
-Input(max_len, 1) -> Conv1D -> GlobalMaxPooling1D -> Dense -> Dense(1)
+DEVELOPERS.md
+scripts/traceability_schema.yaml
 ```
 
-La salida final sigue siendo una probabilidad binaria, con activacion `sigmoid`, para predecir si la ventana pertenece o no al objetivo definido en F04.
+Antes de publicar cambios:
 
-
-Tambien se ha ajustado la carga del dataset para el caso de clases desbalanceadas. En la estrategia `rare_events`, F05 puede leer etiquetas, seleccionar positivos y una muestra limitada de negativos, y despues cargar solo esas filas. Esto reduce memoria y tiempo cuando hay muchos negativos.
-
-### F06: cuantizacion y empaquetado desde entrada numerica
-
-F06 se ha cambiado para calibrar y cuantizar modelos que reciben `OW_values`.
-
-Antes la calibracion dependia de eventos y de `event_type_count`. Tambien habia comprobaciones sobre si el numero de tipos de evento cabia en ciertos rangos.
-
-Ahora F06 reconstruye la entrada numerica esperada por el modelo, aplica padding o recorte, normaliza la secuencia y genera los datos de calibracion para TFLite. En los metadatos se guardan campos como:
-
-- `input_sequence_column`
-- `input_max_len`
-- `normalization_mean`
-- `normalization_std`
-
-Esto hace que el empaquetado edge siga teniendo trazabilidad sobre como se preparo la entrada del modelo.
-
-
-### Cambios transversales de soporte
-
-Tambien se han actualizado piezas comunes para que el nuevo flujo sea coherente:
-
-- `Makefile`: comandos de F02 y F04 cambiados para usar `MEASURE`, `THRESHOLD` y `DIRECTION`.
-- `makefile_check_phases.yml`: los chequeos ahora esperan los nuevos artefactos de F02 y ya no exigen catalogos de eventos.
-- `scripts/traceability_schema.yaml`: el esquema de trazabilidad se ha adaptado a `series`, `OW_values`, `PW_values`, umbrales numericos y modelos sin `event_type_count`.
-- `scripts/core/params_manager.py`: se ha anadido validacion para evitar elegir una medida que no existe en el parent.
-- `scripts/core/artifacts.py`: se ha anadido una comprobacion defensiva relacionada con medidas exportadas.
-
-En resumen, el repositorio ahora tiene un flujo mas simple y directo para series temporales: F01 limpia, F02 elige una medida, F03 crea ventanas numericas, F04 etiqueta por umbral, F05 entrena, F06 cuantiza y F07-F08 validan en edge.
+- no subir `.env`;
+- no subir caches DVC/MLflow;
+- no subir builds pesados;
+- revisar que `executions/` no contiene artefactos que no deban versionarse;
+- actualizar este README si cambian parametros, comandos o contratos de fase.

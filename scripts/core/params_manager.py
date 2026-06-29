@@ -99,6 +99,15 @@ def parse_value_by_rule(raw_value: str, rule: dict, key: str):
         except ValueError:
             raise ValueError(f"{key} debe ser number")
 
+    if expected == "boolean":
+        raw_lower = str(raw_value).strip().lower()
+        if raw_lower in ("true", "yes", "1", "on"):
+            return True
+        elif raw_lower in ("false", "no", "0", "off"):
+            return False
+        else:
+            raise ValueError(f"{key} debe ser boolean (true/false, yes/no, 1/0, on/off)")
+
     if expected in ("list", "dict"):
         try:
             value = yaml.safe_load(raw_value)
@@ -173,6 +182,10 @@ def validate_type(value, rule, key):
     elif expected == "number":
         if not isinstance(value, (int, float)):
             raise ValueError(f"{key} debe ser number")
+
+    elif expected == "boolean":
+        if not isinstance(value, bool):
+            raise ValueError(f"{key} debe ser boolean")
 
     elif expected == "list":
         if not isinstance(value, list):

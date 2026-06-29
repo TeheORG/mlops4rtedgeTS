@@ -1,6 +1,8 @@
 import re
 import shutil
+import struct
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from scripts.core.phase_io import load_phase_outputs, load_variant_params, load_yaml_file
@@ -183,10 +185,188 @@ def generate_tflm_resolver(operators, out_path: Path, phase_tag: str):
     out_path.write_text("\n".join(lines))
 
 
-def generate_runtime_config(path: Path, ow, mti_ms, tu_ms):
+def _c_type_for_input_dtype(input_dtype: str) -> str:
+    dtype = str(input_dtype or "").strip().lower()
+    if dtype == "int8":
+        return "int8_t"
+    if dtype == "uint8":
+        return "uint8_t"
+    raise RuntimeError(f"Unsupported TFLite input dtype for edge input buffer: {input_dtype}")
+
+
+def _range_for_input_dtype(input_dtype: str) -> tuple[int, int]:
+    dtype = str(input_dtype or "").strip().lower()
+    if dtype == "int8":
+        return -128, 127
+    if dtype == "uint8":
+        return 0, 255
+    raise RuntimeError(f"Unsupported TFLite input dtype for embedded input data: {input_dtype}")
+
+
+TFLITE_TENSOR_TYPE_NAMES = {
+    0: "float32",
+    2: "int32",
+    3: "uint8",
+    4: "int64",
+    9: "int8",
+    10: "float16",
+}
+
+
+def _read_uoffset(buf: bytes, offset: int) -> int:
+    return struct.unpack_from("<I", buf, offset)[0]
+
+
+def _read_soffset(buf: bytes, offset: int) -> int:
+    return struct.unpack_from("<i", buf, offset)[0]
+
+
+def _table_field_pos(buf: bytes, table_pos: int, field_id: int) -> int | None:
+    vtable_pos = table_pos - _read_soffset(buf, table_pos)
+    vtable_size = struct.unpack_from("<H", buf, vtable_pos)[0]
+    field_entry = 4 + field_id * 2
+    if field_entry + 2 > vtable_size:
+        return None
+    field_offset = struct.unpack_from("<H", buf, vtable_pos + field_entry)[0]
+    if field_offset == 0:
+        return None
+    return table_pos + field_offset
+
+
+def _table_ref(buf: bytes, table_pos: int, field_id: int) -> int | None:
+    field_pos = _table_field_pos(buf, table_pos, field_id)
+    if field_pos is None:
+        return None
+    return field_pos + _read_uoffset(buf, field_pos)
+
+
+def _vector_pos(buf: bytes, table_pos: int, field_id: int) -> int | None:
+    field_pos = _table_field_pos(buf, table_pos, field_id)
+    if field_pos is None:
+        return None
+    return field_pos + _read_uoffset(buf, field_pos)
+
+
+def _vector_len(buf: bytes, vector_pos: int) -> int:
+    return struct.unpack_from("<I", buf, vector_pos)[0]
+
+
+def _vector_table(buf: bytes, vector_pos: int, index: int) -> int:
+    elem_pos = vector_pos + 4 + index * 4
+    return elem_pos + _read_uoffset(buf, elem_pos)
+
+
+def _vector_int32(buf: bytes, vector_pos: int) -> list[int]:
+    n = _vector_len(buf, vector_pos)
+    start = vector_pos + 4
+    return [struct.unpack_from("<i", buf, start + i * 4)[0] for i in range(n)]
+
+
+def _vector_float32(buf: bytes, vector_pos: int) -> list[float]:
+    n = _vector_len(buf, vector_pos)
+    start = vector_pos + 4
+    return [struct.unpack_from("<f", buf, start + i * 4)[0] for i in range(n)]
+
+
+def _vector_int64(buf: bytes, vector_pos: int) -> list[int]:
+    n = _vector_len(buf, vector_pos)
+    start = vector_pos + 4
+    return [struct.unpack_from("<q", buf, start + i * 8)[0] for i in range(n)]
+
+
+def inspect_tflite_input_quantization_flatbuffer(tflite_path: Path) -> dict[str, Any]:
+    buf = tflite_path.read_bytes()
+    model_pos = _read_uoffset(buf, 0)
+
+    subgraphs_vec = _vector_pos(buf, model_pos, 2)
+    if subgraphs_vec is None or _vector_len(buf, subgraphs_vec) < 1:
+        raise RuntimeError(f"TFLite model has no subgraphs: {tflite_path}")
+    subgraph_pos = _vector_table(buf, subgraphs_vec, 0)
+
+    inputs_vec = _vector_pos(buf, subgraph_pos, 1)
+    if inputs_vec is None or _vector_len(buf, inputs_vec) != 1:
+        n_inputs = 0 if inputs_vec is None else _vector_len(buf, inputs_vec)
+        raise RuntimeError(f"TFLite model must have exactly 1 input, got {n_inputs}")
+    input_tensor_index = _vector_int32(buf, inputs_vec)[0]
+
+    tensors_vec = _vector_pos(buf, subgraph_pos, 0)
+    if tensors_vec is None or input_tensor_index >= _vector_len(buf, tensors_vec):
+        raise RuntimeError(f"TFLite input tensor index out of range: {input_tensor_index}")
+    tensor_pos = _vector_table(buf, tensors_vec, input_tensor_index)
+
+    type_pos = _table_field_pos(buf, tensor_pos, 1)
+    tensor_type = struct.unpack_from("<b", buf, type_pos)[0] if type_pos is not None else None
+    dtype = TFLITE_TENSOR_TYPE_NAMES.get(tensor_type, f"tflite_type_{tensor_type}")
+
+    shape_vec = _vector_pos(buf, tensor_pos, 0)
+    shape = _vector_int32(buf, shape_vec) if shape_vec is not None else None
+
+    quant_pos = _table_ref(buf, tensor_pos, 4)
+    scale = 0.0
+    zero_point = 0
+    if quant_pos is not None:
+        scale_vec = _vector_pos(buf, quant_pos, 2)
+        zero_vec = _vector_pos(buf, quant_pos, 3)
+        scales = _vector_float32(buf, scale_vec) if scale_vec is not None else []
+        zeros = _vector_int64(buf, zero_vec) if zero_vec is not None else []
+        if scales:
+            scale = float(scales[0])
+        if zeros:
+            zero_point = int(zeros[0])
+
+    if dtype in {"int8", "uint8"} and scale <= 0.0:
+        raise RuntimeError(f"TFLite integer input has invalid quantization scale: {scale}")
+
+    return {
+        "input_dtype": dtype,
+        "input_quant_scale": scale,
+        "input_quant_zero_point": zero_point,
+        "input_shape": shape,
+    }
+
+
+def inspect_tflite_input_quantization(tflite_path: Path) -> dict[str, Any]:
+    try:
+        import tensorflow as tf  # type: ignore
+    except Exception:
+        try:
+            from tflite_runtime.interpreter import Interpreter  # type: ignore
+        except Exception as exc:
+            return inspect_tflite_input_quantization_flatbuffer(tflite_path)
+        interpreter = Interpreter(model_path=str(tflite_path))
+    else:
+        interpreter = tf.lite.Interpreter(model_path=str(tflite_path))
+
+    interpreter.allocate_tensors()
+    input_details = interpreter.get_input_details()
+    if len(input_details) != 1:
+        raise RuntimeError(f"TFLite model must have exactly 1 input, got {len(input_details)}")
+
+    detail = input_details[0]
+    dtype = getattr(detail.get("dtype"), "__name__", None) or str(detail.get("dtype"))
+    if "int8" in dtype:
+        dtype = "int8"
+    elif "uint8" in dtype:
+        dtype = "uint8"
+
+    scale, zero_point = detail.get("quantization", (0.0, 0))
+    if dtype in {"int8", "uint8"} and (scale is None or float(scale) <= 0.0):
+        raise RuntimeError(f"TFLite integer input has invalid quantization scale: {scale}")
+
+    shape = detail.get("shape")
+    return {
+        "input_dtype": dtype,
+        "input_quant_scale": float(scale or 0.0),
+        "input_quant_zero_point": int(zero_point or 0),
+        "input_shape": shape.tolist() if hasattr(shape, "tolist") else shape,
+    }
+
+
+def generate_runtime_config(path: Path, ow, mti_ms, tu_ms, input_dtype: str = "int8"):
     tunit_ms = int(round(tu_ms))
     ow_ms = ow * tunit_ms
     mti_ms_int = int(round(float(mti_ms)))
+    event_c_type = _c_type_for_input_dtype(input_dtype)
 
     code = f"""
 #ifndef CONFIG_H
@@ -202,7 +382,7 @@ def generate_runtime_config(path: Path, ow, mti_ms, tu_ms):
 #define MTI_MS {mti_ms_int}
 #define MIT_MS MTI_MS
 
-typedef uint8_t event_t;
+typedef {event_c_type} event_t;
 
 #endif
 """
@@ -210,13 +390,13 @@ typedef uint8_t event_t;
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(code)
 
-
 def copy_dataset_to_csv(
     src_path: Path,
     csv_variant: Path,
     csv_project: Path,
     *,
     allow_csv: bool,
+    max_rows: int | None = None,
 ):
     suffix = src_path.suffix.lower()
     if suffix == ".parquet":
@@ -227,6 +407,19 @@ def copy_dataset_to_csv(
         if allow_csv:
             raise RuntimeError(f"Dataset source no soportado: {src_path} (se espera .parquet o .csv)")
         raise RuntimeError(f"Dataset source no soportado: {src_path} (se espera .parquet)")
+
+    if max_rows is not None:
+        max_rows = int(max_rows)
+        if max_rows < 1:
+            raise RuntimeError("max_rows must be >= 1 when provided")
+        df = df.head(max_rows)
+
+    for column in df.select_dtypes(include=["object"]).columns:
+        df[column] = df[column].map(
+            lambda value: " ".join(str(value).split())
+            if "\n" in str(value) or "\r" in str(value)
+            else value
+        )
 
     csv_variant.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(csv_variant, index=False, sep=";")
@@ -255,7 +448,8 @@ def copy_or_convert_dataset_to_csv(
         raise RuntimeError(f"Dataset source no soportado: {src_path} (se espera .parquet)")
 
 
-def _parse_events_cell(value, max_event_id: int) -> list[int]:
+
+def _parse_input_sequence_cell(value, min_value: int, max_value: int) -> list[int]:
     if value is None:
         return []
 
@@ -263,44 +457,136 @@ def _parse_events_cell(value, max_event_id: int) -> list[int]:
     if not text or text == "[]":
         return []
 
-    nums = re.findall(r"-?\d+", text)
+    nums = re.findall(r"-?\d+(?:\.\d+)?", text)
     parsed: list[int] = []
     for n in nums:
-        v = int(n)
-        if v < 0:
-            raise RuntimeError(f"Negative event id not supported: {v}")
-        if v > max_event_id:
-            raise RuntimeError(
-                f"Event id {v} out of allowed range 0 or 1..{max_event_id}. "
-                "Regenera ancestros o revisa el catálogo F02/F03."
-            )
+        v = int(round(float(n)))
+        if v < min_value or v > max_value:
+            raise RuntimeError(f"Input value {v} out of allowed range {min_value}..{max_value}.")
         parsed.append(v)
 
     return parsed
 
 
+def _parse_raw_sequence_cell(value) -> list[float]:
+    if value is None:
+        return []
+
+    text = str(value).strip()
+    if not text or text == "[]":
+        return []
+
+    return [float(n) for n in re.findall(r"-?\d+(?:\.\d+)?", text)]
+
+
+def _quantize_raw_sequence(
+    raw_values: list[float],
+    *,
+    input_dtype: str,
+    input_max_len: int,
+    normalization_mean: float,
+    normalization_std: float,
+    input_quant_scale: float,
+    input_quant_zero_point: int,
+) -> list[int]:
+    if input_max_len <= 0:
+        raise RuntimeError(f"input_max_len must be > 0, got {input_max_len}")
+    if normalization_std <= 0.0:
+        raise RuntimeError(f"normalization_std must be > 0, got {normalization_std}")
+    if input_quant_scale <= 0.0:
+        raise RuntimeError(f"input_quant_scale must be > 0, got {input_quant_scale}")
+
+    min_value, max_value = _range_for_input_dtype(input_dtype)
+    padded = [0.0] * input_max_len
+    trunc = [float(v) for v in raw_values[-input_max_len:]]
+    if trunc:
+        padded[-len(trunc):] = trunc
+
+    quantized = []
+    for raw in padded:
+        normalized = (raw - normalization_mean) / normalization_std
+        q = int(round(normalized / input_quant_scale + input_quant_zero_point))
+        q = max(min_value, min(max_value, q))
+        quantized.append(q)
+
+    return quantized
+
+
+def parse_raw_input_sequence_cell(value) -> list[float]:
+    return _parse_raw_sequence_cell(value)
+
+
+def quantize_raw_input_sequence(
+    raw_values: list[float],
+    *,
+    input_dtype: str,
+    input_max_len: int,
+    normalization_mean: float,
+    normalization_std: float,
+    input_quant_scale: float,
+    input_quant_zero_point: int,
+) -> list[int]:
+    return _quantize_raw_sequence(
+        raw_values,
+        input_dtype=input_dtype,
+        input_max_len=input_max_len,
+        normalization_mean=normalization_mean,
+        normalization_std=normalization_std,
+        input_quant_scale=input_quant_scale,
+        input_quant_zero_point=input_quant_zero_point,
+    )
+
+
 def generate_memory_events_header(
     csv_path: Path,
     out_path: Path,
-    event_type_count: int,
+    input_dtype: str = "int8",
     max_rows: int | None = None,
+    input_max_len: int | None = None,
+    normalization_mean: float | None = None,
+    normalization_std: float | None = None,
+    input_quant_scale: float | None = None,
+    input_quant_zero_point: int | None = None,
 ):
-    if event_type_count < 1:
-        raise RuntimeError("event_type_count must be >= 1")
-    if event_type_count > 256:
-        raise RuntimeError(
-            f"event_type_count={event_type_count} exceeds uint8 capacity (256)."
-        )
-
-    max_event_id = event_type_count
+    min_value, max_value = _range_for_input_dtype(input_dtype)
     df = pd.read_csv(csv_path, sep=";")
-    events: list[list[int]] = []
+    input_rows: list[list[int]] = []
 
     rows_df = df if max_rows is None else df.head(max_rows)
 
     if "OW_events" in rows_df.columns:
         for raw in rows_df["OW_events"].tolist():
-            events.append(_parse_events_cell(raw, max_event_id))
+            input_rows.append(_parse_input_sequence_cell(raw, min_value, max_value))
+    elif "OW_values" in rows_df.columns:
+        missing = [
+            name
+            for name, value in {
+                "input_max_len": input_max_len,
+                "normalization_mean": normalization_mean,
+                "normalization_std": normalization_std,
+                "input_quant_scale": input_quant_scale,
+                "input_quant_zero_point": input_quant_zero_point,
+            }.items()
+            if value is None
+        ]
+        if missing:
+            raise RuntimeError(
+                "OW_values input requires F06 preprocessing metadata: "
+                + ", ".join(missing)
+            )
+        for raw in rows_df["OW_values"].tolist():
+            raw_values = _parse_raw_sequence_cell(raw)
+            input_rows.append(
+                _quantize_raw_sequence(
+                    raw_values,
+                    input_dtype=input_dtype,
+                    input_max_len=int(input_max_len),
+                    normalization_mean=float(normalization_mean),
+                    normalization_std=float(normalization_std),
+                    input_quant_scale=float(input_quant_scale),
+                    input_quant_zero_point=int(input_quant_zero_point),
+                )
+            )
     else:
         numeric_df = rows_df.apply(pd.to_numeric, errors="coerce").dropna(axis=1, how="all")
         drop_cols = {"label", "target", "y", "pred", "prediction", "class"}
@@ -315,18 +601,15 @@ def generate_memory_events_header(
                 values = []
                 for v in row:
                     event_id = int(round(float(v)))
-                    if event_id < 0:
-                        raise RuntimeError(f"Negative event id not supported: {event_id}")
-                    if event_id > max_event_id:
+                    if event_id < min_value or event_id > max_value:
                         raise RuntimeError(
-                            f"Event id {event_id} out of allowed range 0 or 1..{max_event_id}. "
-                            "Regenera ancestros o revisa el catálogo F02/F03."
+                            f"Input value {event_id} out of allowed range {min_value}..{max_value}."
                         )
                     values.append(event_id)
-                events.append(values)
+                input_rows.append(values)
 
-    if not events:
-        events = [[0]]
+    if not input_rows:
+        input_rows = [[0]]
 
     lines = [
         "#ifndef MEMORY_EVENTS_H",
@@ -336,23 +619,23 @@ def generate_memory_events_header(
         "",
     ]
 
-    for idx, row in enumerate(events):
+    for idx, row in enumerate(input_rows):
         encoded = row if row else [0]
         row_values = ", ".join(str(v) for v in encoded)
         lines.append(f"static const event_t memory_event_{idx}[] = {{ {row_values} }};")
 
     lines.append("")
     lines.append("static const event_t *memory_events[] = {")
-    for idx in range(len(events)):
+    for idx in range(len(input_rows)):
         lines.append(f"    memory_event_{idx},")
     lines.append("};")
     lines.append("")
     lines.append("static const size_t memory_events_lengths[] = {")
-    for row in events:
+    for row in input_rows:
         lines.append(f"    {len(row)},")
     lines.append("};")
     lines.append("")
-    lines.append(f"static const size_t memory_events_count = {len(events)};")
+    lines.append(f"static const size_t memory_events_count = {len(input_rows)};")
     lines.append("")
     lines.append("#endif")
 

@@ -34,7 +34,7 @@ CHAIN = [
 TARGET_PARAMS: dict[str, list[str]] = {
     "Tu": ["Tu"],
     # Unificado con el nombre de F02 (v2): n_types.
-    "n_types": ["n_types", "num_events_types", "event_types_max", "event_type_count"],
+    "n_types": ["n_types", "num_events_types", "event_types_max"],
     "OW": ["OW"],
     "LT": ["LT"],
     "PW": ["PW"],

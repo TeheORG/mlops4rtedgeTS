@@ -23,7 +23,7 @@ from scripts.core.traceability import validate_outputs
 # ============================================================
 PHASE = "f04_targets"
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-MIN_POSITIVE_RATIO_FOR_TARGET_COMPATIBILITY = 0.001
+DEFAULT_MIN_POSITIVE_RATIO_FOR_TARGET_COMPATIBILITY = 0.001
 # ============================================================
 
 
@@ -212,6 +212,12 @@ def main():
     params_data = load_params(PHASE, variant)
     params = params_data["parameters"]
     parent_variant = params_data["parent"]
+    min_positive_ratio_for_target_compatibility = float(
+        params.get(
+            "min_positive_ratio_for_target_compatibility",
+            DEFAULT_MIN_POSITIVE_RATIO_FOR_TARGET_COMPATIBILITY,
+        )
+    )
 
     print(f"\n===== INICIO {PHASE} / {variant} =====")
 
@@ -403,12 +409,22 @@ def main():
     positive_ratio = positives / total if total else 0.0
     negative_ratio = negatives / total if total else 0.0
     target_candidate_checks = [(measure_name, direction)] if measure_name and direction else []
-    target_compatible = positive_ratio >= MIN_POSITIVE_RATIO_FOR_TARGET_COMPATIBILITY
+    target_compatible = positive_ratio >= min_positive_ratio_for_target_compatibility
+    compatibility_checks = [
+        {
+            "name": "positive_ratio",
+            "value": float(positive_ratio),
+            "minimum": float(min_positive_ratio_for_target_compatibility),
+            "maximum": None,
+            "passed": bool(target_compatible),
+            "reason": "positive ratio above minimum" if target_compatible else "positive ratio below minimum",
+        }
+    ]
     incompatibility_reason = None
     if not target_compatible:
         incompatibility_reason = (
             f"positive_ratio={positive_ratio:.6f} below minimum "
-            f"{MIN_POSITIVE_RATIO_FOR_TARGET_COMPATIBILITY:.6f}"
+            f"{min_positive_ratio_for_target_compatibility:.6f}"
         )
 
     if dedup is not None:
@@ -524,8 +540,13 @@ def main():
             "positive_ratio": float(positive_ratio),
             "negative_ratio": float(negative_ratio),
             "class_balance_ratio": float(positive_ratio),
+            "compatible": bool(target_compatible),
             "target_compatible": bool(target_compatible),
             "incompatibility_reason": incompatibility_reason,
+            "compatibility_checks": compatibility_checks,
+            "min_positive_ratio_for_target_compatibility": float(
+                min_positive_ratio_for_target_compatibility
+            ),
             "target_candidate_checks": [
                 {"measure": measure, "direction": direction}
                 for measure, direction in target_candidate_checks
@@ -545,6 +566,7 @@ def main():
             "n_windows_neg": int(negatives),
             "n_positive": int(positives),
             "n_negative": int(negatives),
+            "compatible": bool(target_compatible),
             "target_compatible": bool(target_compatible),
             "incompatibility_reason": incompatibility_reason,
             "threshold_value": float(threshold_value) if threshold_value is not None else None,

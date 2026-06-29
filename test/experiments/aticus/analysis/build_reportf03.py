@@ -1230,7 +1230,6 @@ def build_html(
         dup_ratio_ow = fmt_ratio(safe_val(row, "dup_ratio_ow", None))
         dup_ratio_pw = fmt_ratio(safe_val(row, "dup_ratio_pw", None))
         execution_time = fmt_ratio(safe_val(row, "execution_time", None), 3)
-        event_type_count = fmt_int(safe_val(row, "event_type_count", None))
         n_events_in = fmt_int(safe_val(row, "n_events_in", None))
             
         occupancy_rel = None
@@ -1261,7 +1260,6 @@ def build_html(
 
           <div class="hashmap-meta-grid">
             {kv_item("manifest_strategy", str(safe_val(row, "manifest_strategy", "")))}
-            {kv_item("event_type_count", event_type_count)}
             {kv_item("dup_ratio_ow", dup_ratio_ow)}
             {kv_item("dup_ratio_pw", dup_ratio_pw)}
             {kv_item("n_events_in", n_events_in)}

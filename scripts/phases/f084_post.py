@@ -665,7 +665,6 @@ def _write_outputs_yaml(
         "OW": ((selected_cfg.get("common_input_signature", {}) or {}).get("OW")),
         "LT": ((selected_cfg.get("common_input_signature", {}) or {}).get("LT")),
         "PW": ((selected_cfg.get("common_input_signature", {}) or {}).get("PW")),
-        "event_type_count": ((selected_cfg.get("common_input_signature", {}) or {}).get("event_type_count")),
         "model_ids": [m.get("model_id") for m in (selected_cfg.get("models", []) or [])],
         "runtime_model_names": [m.get("runtime_model_name") for m in (selected_cfg.get("models", []) or [])],
         "MTI_MS": ((selected_cfg.get("system_limits", {}) or {}).get("MTI_MS")),
@@ -1094,4 +1093,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     run_analysis(args.variant)
 
-    

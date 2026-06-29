@@ -175,13 +175,17 @@ def write_initial_system_profile(
     OW: int,
     LT: int,
     PW: int,
-    event_type_count: int,
     input_dtype: str,
     output_dtype: str,
     input_shape,
     output_shape,
     input_bytes: int,
     output_bytes: int,
+    input_max_len: int | None,
+    normalization_mean: float | None,
+    normalization_std: float | None,
+    input_quant_scale: float | None,
+    input_quant_zero_point: int | None,
     operators_union: list[str],
     required_arena_bytes: int,
     total_model_size_bytes: int,
@@ -227,13 +231,17 @@ def write_initial_system_profile(
             "OW": int(OW),
             "LT": int(LT),
             "PW": int(PW),
-            "event_type_count": int(event_type_count),
             "input_dtype": input_dtype,
             "output_dtype": output_dtype,
             "input_shape": input_shape,
             "output_shape": output_shape,
             "input_bytes": int(input_bytes),
             "output_bytes": int(output_bytes),
+            "input_max_len": int(input_max_len) if input_max_len is not None else None,
+            "normalization_mean": float(normalization_mean) if normalization_mean is not None else None,
+            "normalization_std": float(normalization_std) if normalization_std is not None else None,
+            "input_quant_scale": float(input_quant_scale) if input_quant_scale is not None else None,
+            "input_quant_zero_point": int(input_quant_zero_point) if input_quant_zero_point is not None else None,
         },
         "build": {
             "operators_union": list(operators_union),
@@ -355,7 +363,6 @@ def main():
     OW = int(common_sig["OW"])
     LT = int(common_sig["LT"])
     PW = int(common_sig["PW"])
-    event_type_count = int(common_sig["event_type_count"])
 
     input_dtype = common_sig.get("input_dtype")
     output_dtype = common_sig.get("output_dtype")
@@ -363,8 +370,13 @@ def main():
     output_shape = common_sig.get("output_shape")
     input_bytes = int(common_sig["input_bytes"])
     output_bytes = int(common_sig["output_bytes"])
+    input_max_len = common_sig.get("input_max_len")
+    normalization_mean = common_sig.get("normalization_mean")
+    normalization_std = common_sig.get("normalization_std")
+    input_quant_scale = common_sig.get("input_quant_scale")
+    input_quant_zero_point = common_sig.get("input_quant_zero_point")
 
-    if input_dtype not in {"int8", "uint8"}:
+    if input_dtype != "int8":
         raise RuntimeError(f"[F08] Modelo incompatible: input_dtype={input_dtype}")
 
     if output_dtype != "int8":
@@ -428,7 +440,7 @@ def main():
     generate_tflm_resolver(operators, resolver_path, "F08")
 
     runtime_cfg = build_gen / "config.h"
-    generate_runtime_config(runtime_cfg, OW, global_mti_ms, tu_ms)
+    generate_runtime_config(runtime_cfg, OW, global_mti_ms, tu_ms, input_dtype=input_dtype)
 
     unique_windows_rel = datasets.get("unique_windows_csv")
     if not unique_windows_rel:
@@ -455,8 +467,13 @@ def main():
     generate_memory_events_header(
         csv_variant,
         memory_events_path,
-        event_type_count=event_type_count,
+        input_dtype=input_dtype,
         max_rows=max_rows,
+        input_max_len=input_max_len,
+        normalization_mean=normalization_mean,
+        normalization_std=normalization_std,
+        input_quant_scale=input_quant_scale,
+        input_quant_zero_point=input_quant_zero_point,
     )
 
     recommended_drain_seconds = compute_recommended_drain_seconds(
@@ -483,9 +500,6 @@ def main():
             "OW": OW,
             "LT": LT,
             "PW": PW,
-        },
-        "events": {
-            "event_type_count": int(event_type_count),
         },
         "drain": {
             "tu_ms": float(tu_ms),
@@ -557,13 +571,17 @@ def main():
         OW=OW,
         LT=LT,
         PW=PW,
-        event_type_count=event_type_count,
         input_dtype=input_dtype,
         output_dtype=output_dtype,
         input_shape=input_shape,
         output_shape=output_shape,
         input_bytes=input_bytes,
         output_bytes=output_bytes,
+        input_max_len=input_max_len,
+        normalization_mean=normalization_mean,
+        normalization_std=normalization_std,
+        input_quant_scale=input_quant_scale,
+        input_quant_zero_point=input_quant_zero_point,
         operators_union=operators,
         required_arena_bytes=required_arena_bytes,
         total_model_size_bytes=total_model_size_bytes,

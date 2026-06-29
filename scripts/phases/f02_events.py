@@ -33,7 +33,7 @@ from scripts.core.traceability import validate_outputs
 
 PHASE = "f02_events"  # Mantener el nombre para no romper Makefile/rutas existentes.
 PROJECT_ROOT = REPO_ROOT
-MIN_STD_FOR_MEASURE_COMPATIBILITY = 0.0
+DEFAULT_MIN_STD_FOR_MEASURE_COMPATIBILITY = 0.0
 
 
 # ============================================================
@@ -396,6 +396,12 @@ def main():
 
     Tu = params.get("Tu")
     measure_name = get_measure_name(params)
+    min_std_for_measure_compatibility = float(
+        params.get(
+            "min_std_for_measure_compatibility",
+            DEFAULT_MIN_STD_FOR_MEASURE_COMPATIBILITY,
+        )
+    )
 
     # --------------------------------------------------------
     # Resolver columna temporal
@@ -444,18 +450,30 @@ def main():
     std_value = stats.get("std")
     measure_compatible = (
         std_value is not None
-        and float(std_value) > MIN_STD_FOR_MEASURE_COMPATIBILITY
+        and float(std_value) > min_std_for_measure_compatibility
     )
+    compatibility_checks = [
+        {
+            "name": "measure_std",
+            "value": float(std_value) if std_value is not None else None,
+            "minimum": float(min_std_for_measure_compatibility),
+            "maximum": None,
+            "passed": bool(measure_compatible),
+            "reason": "measure std above minimum" if measure_compatible else "measure std not above minimum",
+        }
+    ]
     incompatibility_reason = None
     if not measure_compatible:
         std_text = "None" if std_value is None else f"{float(std_value):.6f}"
         incompatibility_reason = (
             f"std={std_text} not above minimum "
-            f"{MIN_STD_FOR_MEASURE_COMPATIBILITY:.6f}"
+            f"{min_std_for_measure_compatibility:.6f}"
         )
     stats["compatible"] = bool(measure_compatible)
     stats["measure_compatible"] = bool(measure_compatible)
     stats["incompatibility_reason"] = incompatibility_reason
+    stats["min_std_for_measure_compatibility"] = float(min_std_for_measure_compatibility)
+    stats["compatibility_checks"] = compatibility_checks
 
     # --------------------------------------------------------
     # Guardar artefactos
@@ -519,6 +537,8 @@ def main():
             "compatible": bool(measure_compatible),
             "measure_compatible": bool(measure_compatible),
             "incompatibility_reason": incompatibility_reason,
+            "compatibility_checks": compatibility_checks,
+            "min_std_for_measure_compatibility": float(min_std_for_measure_compatibility),
         },
         "metrics": build_outputs_metrics(
             stats=stats,

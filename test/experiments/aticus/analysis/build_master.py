@@ -604,7 +604,6 @@ def build_f03_row(project_root: Path, manifest_row: pd.Series) -> Dict[str, Any]
         "OW/PW": f03_exports.get("OW") / f03_exports.get("PW") if f03_exports.get("PW") else None,
 
         # exports.yaml
-        "event_type_count": f03_exports.get("event_type_count"),
         "n_windows": f03_exports.get("n_windows"),
         "n_unique_ow_hash": f03_exports.get("n_unique_ow_hash"),
         "n_unique_pw_hash": f03_exports.get("n_unique_pw_hash"),

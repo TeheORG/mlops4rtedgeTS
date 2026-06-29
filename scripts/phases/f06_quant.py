@@ -307,6 +307,18 @@ def inspect_quantized_tflite(tflite_bytes: bytes):
         # tamaño lógico mínimo; suficiente para comparar contrato de entrada/salida
         return int(np.prod(shape))
 
+    def _quantization(d):
+        if not d:
+            return (None, None)
+        scale, zero_point = d[0].get("quantization", (None, None))
+        return (
+            None if scale is None else float(scale),
+            None if zero_point is None else int(zero_point),
+        )
+
+    input_scale, input_zero_point = _quantization(input_details)
+    output_scale, output_zero_point = _quantization(output_details)
+
     return {
         "num_inputs": len(input_details),
         "num_outputs": len(output_details),
@@ -316,6 +328,10 @@ def inspect_quantized_tflite(tflite_bytes: bytes):
         "output_shape": _shape_list(output_details),
         "input_bytes": _bytes_from_shape(input_details),
         "output_bytes": _bytes_from_shape(output_details),
+        "input_quant_scale": input_scale,
+        "input_quant_zero_point": input_zero_point,
+        "output_quant_scale": output_scale,
+        "output_quant_zero_point": output_zero_point,
     }
 
 # ============================================================
@@ -810,6 +826,10 @@ def main():
         exports_out["input_bytes"] = quant_signature["input_bytes"]
         exports_out["output_bytes"] = quant_signature["output_bytes"]
         exports_out["input_dtype_tflite"] = quant_signature["input_dtype"]
+        exports_out["input_quant_scale"] = quant_signature["input_quant_scale"]
+        exports_out["input_quant_zero_point"] = quant_signature["input_quant_zero_point"]
+        exports_out["output_quant_scale"] = quant_signature["output_quant_scale"]
+        exports_out["output_quant_zero_point"] = quant_signature["output_quant_zero_point"]
 
     # ----------------------------------------------------------
     # 8. METRICS

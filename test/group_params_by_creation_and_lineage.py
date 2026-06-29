@@ -33,7 +33,6 @@ PHASE_ORDER = {
 
 TARGET_PARAMS: dict[str, list[str]] = {
     "Tu": ["Tu"],
-    "event_type_count": ["event_type_count"],
     "OW": ["OW"],
     "LT": ["LT"],
     "PW": ["PW"],
